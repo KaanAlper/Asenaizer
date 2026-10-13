@@ -32,7 +32,8 @@ static class Program
 sealed class SetupForm : Form
 {
     // ---------------------------------------------------------------- texts (Turkish / English)
-    bool tr = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "tr";
+    // Asenaizer's interface is English only; the Turkish texts stay so a language switch is one line.
+    bool tr = false;
     string T(string turkish, string english) { return tr ? turkish : english; }
 
     // ---------------------------------------------------------------- choices
@@ -548,7 +549,7 @@ sealed class SetupForm : Form
     public static void Shots(string dir)
     {
         Directory.CreateDirectory(dir);
-        foreach (bool turkish in new[] { true, false })
+        foreach (bool turkish in new[] { false }) // English only, like the app
         {
             string lang = turkish ? "tr" : "en";
             Shot(dir, lang + "-1-options", turkish, f => { });

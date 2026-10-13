@@ -26,7 +26,8 @@ $UA = 'Asenaizer-Install'
 $E = [char]27
 
 # ---------------------------------------------------------------- texts (Turkish / English)
-$tr = (Get-UICulture).Name -like 'tr*'
+# Asenaizer's interface is English only; the Turkish texts stay so a language switch is one line.
+$tr = $false
 function Get-Texts([bool]$tr) {
 if ($tr) { @{
         tagline = 'Asenaizer: yapay zekâ taslaklarını kendi bilgisayarında, bir insan yazmış gibi yeniden yazar'

@@ -24,7 +24,8 @@ $PROCESS_NAMES = 'asenaizer-tray', 'Humanizer', 'llama-server'
 $K_CV = 'HKCU:\Software\Microsoft\Windows\CurrentVersion'
 $K_INNO = '{8E3C1F52-6A7B-4D19-B2E4-7C5A9F0D1B36}_is1'
 
-$tr = (Get-UICulture).Name -like 'tr*'
+# Asenaizer's interface is English only; the Turkish texts stay so a language switch is one line.
+$tr = $false
 function T([string]$trText, [string]$enText) { if ($tr) { $trText } else { $enText } }
 function Log([string]$m, [string]$color = '') {
     try { Add-Content -LiteralPath $LOG -Value ((Get-Date -Format 'HH:mm:ss ') + $m) -Encoding UTF8 } catch {}
