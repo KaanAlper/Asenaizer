@@ -1,3 +1,36 @@
+## Asenaizer: Linux installation
+
+Asenaizer follows the shared core and separate interface structure used in
+`logical-lunge`. The site is static; a Rust tray app and Go service download and run
+the model on your computer. Linux installation is per user and needs no administrator access.
+
+One line from this checkout:
+
+```bash
+bash scripts/install-linux.sh --source .
+```
+
+One line from the public repository after it has been published:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KaanAlper/Asenaizer/main/scripts/install-linux.sh | bash
+```
+
+The local source build needs Go, Rust/Cargo, Git, Python 3, and GTK3/WebKitGTK/D-Bus development
+packages. Once a release is published, the remote command downloads its checksum-verified
+Linux package and needs only Python 3, curl, and GTK3/WebKitGTK/D-Bus runtime libraries (installed for you when missing).
+Source builds fetch SHA-256 verified llama.cpp binaries: CPU plus CUDA when `nvidia-smi`
+detects an NVIDIA GPU, or CPU plus Vulkan when a Vulkan loader is present. No CUDA compiler is
+needed. The installer downloads no model. A model
+is downloaded on first selection and checked with SHA-256. The service listens on `127.0.0.1`.
+The installed command is `~/.local/bin/asenaizer`; it is also added to session startup.
+Clicking the tray icon opens a small device settings window with model download progress,
+verification status, speed, and pause control.
+The site will be `https://kaanalper.github.io/Asenaizer/` once Pages is published.
+See [project status](PROJECT_OVERVIEW.md) and the [repository research review](docs/RESEARCH.md).
+
+---
+
 <img src="assets/banner-en.png" alt="humanizer: rewrites AI drafts so they read like a person wrote them" width="100%">
 
 <p align="center">

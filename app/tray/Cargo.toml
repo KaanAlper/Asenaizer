@@ -1,0 +1,18 @@
+[package]
+name = "asenaizer-tray"
+version = "0.1.0"
+edition = "2021"
+description = "Asenaizer local GPU helper tray"
+license = "Apache-2.0"
+
+[dependencies]
+tao = "0.37"
+wry = "0.57"
+tray-icon = { version = "0.25", default-features = false, features = ["ksni", "muda-common-controls-v6"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

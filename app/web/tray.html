@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asenaizer</title>
+  <link rel="stylesheet" href="tray.css">
+  <script type="module" src="tray.js"></script>
+</head>
+<body>
+  <main>
+    <header id="titlebar">
+      <span class="mark" aria-hidden="true">✳</span>
+      <div class="brand"><strong>asenaizer</strong><span id="state-pill" class="pill" data-tone="idle"><i></i><span id="state-text">Checking</span></span></div>
+      <button id="hide" class="close" type="button" title="Hide to tray (Esc)" aria-label="Hide to tray">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+      </button>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Device sections">
+      <button class="tab active" id="tab-home" role="tab" type="button" aria-selected="true" aria-controls="home-panel">Device</button>
+      <button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models-panel">Models</button>
+    </nav>
+
+    <section id="home-panel" class="panel" role="tabpanel" aria-labelledby="tab-home">
+      <div class="hero">
+        <h1 id="home-title">Starting…</h1>
+        <p id="home-description">Open the website, then select <b>Connect this device</b> to pair this computer.</p>
+        <div class="hero-actions">
+          <button id="pair-start" class="site-button" type="button">Connect a browser <span aria-hidden="true">→</span></button>
+          <a class="site-link" href="https://kaanalper.github.io/Asenaizer/" target="_blank" rel="noopener noreferrer">Open website ↗</a>
+        </div>
+      </div>
+
+      <button id="unload" class="btn secondary unload" type="button" hidden>Unload model from GPU</button>
+      <div id="gpu-list">
+        <article class="gpu"><p class="label">Graphics</p><strong class="gpu-name">Detecting…</strong></article>
+      </div>
+
+      <dl class="detail-list">
+        <div><dt>Active model</dt><dd id="active-model">None</dd></div>
+        <div><dt>Engine memory</dt><dd id="engine-ram">—</dd></div>
+        <div><dt>Local address</dt><dd id="service-port">127.0.0.1</dd></div>
+      </dl>
+      <section class="browsers" aria-labelledby="browsers-title">
+        <h2 id="browsers-title" class="label">Paired browsers</h2>
+        <ul id="browser-list"></ul>
+      </section>
+      <p class="home-note">Your model and drafts stay on this computer.</p>
+    </section>
+
+    <section id="models-panel" class="panel" role="tabpanel" aria-labelledby="tab-models" hidden>
+      <div class="section-heading"><h1>Models on this device</h1><p>Download once, then rewrite on your own GPU.</p></div>
+      <div id="download" hidden>
+        <div class="progress-head"><strong id="download-label">Downloading model</strong><span id="download-percent">0%</span></div>
+        <progress id="progress" max="100" value="0"></progress>
+        <div class="progress-detail"><span id="download-bytes"></span><span id="download-speed"></span></div>
+        <button id="pause-download" class="btn secondary" type="button">Pause download</button>
+      </div>
+      <p id="model-error" class="error" role="alert" hidden></p>
+      <div id="models"></div>
+    </section>
+  </main>
+
+  <section id="pair-overlay" class="pair-overlay" role="dialog" aria-modal="true" aria-labelledby="pair-title" hidden>
+    <div class="pair-waiting" id="pair-waiting">
+      <span class="pair-pulse" aria-hidden="true"></span>
+      <p class="label">Waiting for connection</p>
+      <h2 id="pair-title">Enter this code on the website</h2>
+      <p class="pair-code" id="pair-code" aria-live="polite">––– –––</p>
+      <p class="pair-hint">Open <b>kaanalper.github.io/Asenaizer</b> in a browser on this computer, select <b>Connect a device</b> and type the code.</p>
+      <p class="pair-expiry" id="pair-expiry"></p>
+      <div class="pair-actions">
+        <button id="pair-new" class="btn secondary" type="button">New code</button>
+        <button id="pair-cancel" class="btn secondary" type="button">Cancel</button>
+      </div>
+    </div>
+    <div class="pair-done" id="pair-done" hidden>
+      <span class="pair-check" aria-hidden="true">✓</span>
+      <h2>Connected</h2>
+      <p id="pair-done-name"></p>
+    </div>
+  </section>
+</body>
+</html>

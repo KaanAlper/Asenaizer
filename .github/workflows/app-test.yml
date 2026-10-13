@@ -29,6 +29,28 @@ defaults:
     working-directory: app
 
 jobs:
+  asenaizer-tray:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Linux tray dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev libxdo-dev
+      - name: Rust tray compile
+        run: cargo check --locked --manifest-path tray/Cargo.toml
+      - name: Linux installer syntax
+        if: runner.os == 'Linux'
+        run: bash -n ../scripts/install-linux.sh
+      - name: Asenaizer site JavaScript syntax
+        run: node --check ../docs/app.js && node --check web/tray.js
+
   unit:
     strategy:
       fail-fast: false

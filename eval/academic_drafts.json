@@ -1,0 +1,26 @@
+[
+  {
+    "id": "CS_ENG_01",
+    "title": "Transformer attention complexity",
+    "genre": "Methodology",
+    "draft": "Standard self-attention has O(N^2) computational complexity in the input sequence length. Sparse attention and low-rank approximations can reduce that cost, but their accuracy and hardware behavior must be measured separately. A comparison should report sequence lengths, latency, memory use, and the exact implementation used."
+  },
+  {
+    "id": "SOC_SCI_02",
+    "title": "Digital labor and platform capitalism",
+    "genre": "Literature Review",
+    "draft": "Srnicek (2017) describes platforms as intermediaries that organize and extract data from interactions. Research on gig work also examines how algorithmic management affects scheduling, pay, and worker autonomy. These claims need separate evidence because platforms and labor arrangements differ."
+  },
+  {
+    "id": "BIOMED_03",
+    "title": "CAR-T therapy in solid tumors",
+    "genre": "Discussion",
+    "draft": "CAR-T cell therapy has shown clinical benefit in some blood cancers. Applying it to solid tumors presents different problems, including antigen heterogeneity, limited cell infiltration, and an immunosuppressive tumor microenvironment. Any comparison of response or survival needs a specified cohort and study design."
+  },
+  {
+    "id": "ECON_04",
+    "title": "Central bank digital currencies",
+    "genre": "Introduction",
+    "draft": "Central banks are studying digital currencies for retail payments. Proposed benefits include payment access and settlement efficiency; concerns include privacy and changes to bank funding. These effects depend on design choices, so evidence from one pilot cannot automatically establish effects elsewhere."
+  }
+]

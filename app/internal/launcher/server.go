@@ -26,8 +26,13 @@ func (a *App) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /app/ping", a.handlePing)
 	mux.HandleFunc("GET /app/status", a.handleStatus)
+	mux.HandleFunc("GET /app/gpu", a.handleGPU)
+	a.registerPairingRoutes(mux)
+	mux.HandleFunc("POST /app/model/unload", a.handleUnload)
 	mux.HandleFunc("GET /app/config", a.handleConfig)
 	mux.HandleFunc("POST /app/setup", a.handleSetup)
+	mux.HandleFunc("POST /app/model/delete", a.handleModelDelete)
+	mux.HandleFunc("POST /app/model/stop", a.handleModelStop)
 	mux.HandleFunc("POST /app/document", a.handleDocument)
 	mux.HandleFunc("POST /app/download/pause", a.handlePause)
 	mux.HandleFunc("POST /app/paths", a.handlePaths)
@@ -39,6 +44,7 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("POST /app/external", a.handleExternalSet)
 	mux.HandleFunc("POST /app/external/test", a.handleExternalTest)
 	a.registerUpdateRoutes(mux)
+	a.registerBridgeRoutes(mux)
 	mux.Handle("/api/", a.countInflight(a.apiProxy()))
 	mux.Handle("/", a.static())
 	return a.guard(mux)
@@ -60,6 +66,10 @@ func (a *App) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !okHost[r.Host] {
 			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/bridge/") {
+			a.bridgeGuard(next).ServeHTTP(w, r)
 			return
 		}
 		if o := r.Header.Get("Origin"); o != "" && !okOrigin[o] {
@@ -322,10 +332,19 @@ func (a *App) handleSetup(w http.ResponseWriter, r *http.Request) {
 		a.logf("保存设置失败:%v", err)
 	}
 	a.stopEngine()
-	if fileExists(a.modelPath(t)) {
-		a.startEngine(t)
-	} else {
+	// In lazy mode only a model chosen on the website loads right away; the tray's
+	// "Make default" and tray downloads only select the model.
+	load := !a.lazyEngine || strings.HasPrefix(r.URL.Path, "/bridge/")
+	a.mu.Lock()
+	a.dlLoad = load
+	a.mu.Unlock()
+	switch {
+	case !fileExists(a.modelPath(t)):
 		a.startDownload(t, ep)
+	case load:
+		a.startEngine(t)
+	default:
+		a.park(t)
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }

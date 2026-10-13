@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src http://127.0.0.1:*; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <title>Asenaizer — A quieter way to rewrite</title>
+  <meta name="description" content="A focused writing workspace powered by a model on your own device.">
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Asenaizer home"><span class="brand-symbol" aria-hidden="true">✳</span><span>asenaizer</span></a>
+    <div class="top-actions"><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button><button class="download-trigger" id="open-download" type="button" aria-haspopup="dialog" aria-label="Desktop app"><span aria-hidden="true">↓</span><span class="dl-text">Desktop app</span></button><div class="device-menu-wrap">
+        <button class="connection-status" id="connection-status" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="device-menu"><span class="status-dot"></span><span id="connection-label">Not connected</span></button>
+        <div id="device-menu" class="device-menu" role="menu" hidden>
+          <p class="device-menu-head"><span>Connected device</span><strong id="device-name">—</strong></p>
+          <button role="menuitem" id="disconnect" type="button">Disconnect</button>
+          <button role="menuitem" id="pair-other" type="button">Connect another device</button>
+          <button role="menuitem" id="forget-device" class="danger" type="button">Forget this device</button>
+        </div>
+      </div></div>
+  </header>
+
+  <main id="connect-screen" class="connect-screen">
+    <div class="connect-content">
+      <div class="connect-emblem" aria-hidden="true">✳</div>
+      <p class="overline">YOUR PRIVATE WRITING SPACE</p>
+      <h1>Good writing starts here.</h1>
+      <p class="connect-lede">Pair this browser with the Asenaizer app. Your drafts are rewritten by the model on that computer's GPU.</p>
+      <div id="reconnect-box" class="reconnect-box" hidden>
+        <button id="reconnect" class="primary-button connect-button" type="button">Reconnect to <span id="reconnect-name">your device</span></button>
+        <button id="use-other" class="text-button" type="button">Use a different device</button>
+      </div>
+      <form id="pair-form" class="pair-form" novalidate>
+        <label for="pair-code" class="pair-label">Device code</label>
+        <div class="pair-row">
+          <input id="pair-code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="7" placeholder="ABC-123" aria-describedby="connect-message">
+          <button id="connect" class="primary-button" type="submit">Connect</button>
+        </div>
+      </form>
+      <p class="message" id="connect-message" role="status" aria-live="polite">In the Asenaizer app, select <b>Connect a browser</b> to see a code.</p>
+      <button class="text-button get-app" id="get-app" type="button">Don't have the app yet? Download it</button>
+    </div>
+    <p class="connect-footnote">One device at a time. Your text is processed on the connected computer.</p>
+  </main>
+
+  <main id="workspace" class="workspace" hidden>
+    <div class="workspace-heading"><div><p class="overline">WRITING WORKSPACE</p><h1>Rewrite</h1></div><button id="new-draft" class="subtle-button" type="button">New draft <span aria-hidden="true">＋</span></button></div>
+    <div class="editor-grid">
+      <section class="editor-panel draft-panel" aria-labelledby="draft-heading">
+        <div class="panel-heading"><div><h2 id="draft-heading">Draft</h2></div><div class="panel-tools"><span id="word-count">0 words</span><button id="edit-draft" class="small-button" type="button" hidden>Edit draft</button></div></div>
+        <div class="draft-body"><textarea id="draft" placeholder="Paste your draft or start writing here…" spellcheck="true" aria-label="Draft text"></textarea><div id="draft-diff" class="diff-text" aria-label="Draft with removed text highlighted" hidden></div></div>
+        <div class="draft-footer">
+          <div class="model-bar"><button id="model-trigger" class="model-trigger" type="button" aria-expanded="false" aria-controls="model-popover"><span class="model-trigger-icon" aria-hidden="true">✳</span><span id="selected-model">Choose a model</span><span class="chevron" aria-hidden="true">⌄</span></button><span class="model-hint" id="model-hint">Connect a model to rewrite</span></div>
+          <div id="model-popover" class="model-popover" hidden><div class="popover-header"><div><strong>Models on this device</strong><span>Download once. Run locally.</span></div><button id="close-models" class="icon-button" type="button" aria-label="Close model menu">×</button></div><div id="model-list" class="model-list"></div><div id="download-progress" class="download-progress" hidden><div><span id="download-label">Downloading</span><span id="download-percent"></span></div><progress id="download-bar" max="100" value="0"></progress></div><p class="model-message" id="model-message" role="status" aria-live="polite"></p></div>
+          <div class="footer-actions"><div class="composer-options"><span class="shortcut-hint">Type <kbd>/model</kbd> to switch model</span><details class="generation-settings"><summary>Generation settings</summary><div class="settings-content"><label>Max output <select id="output-limit"><option value="2048">2,048 tokens</option><option value="1024">1,024 tokens</option><option value="512">512 tokens</option></select></label><p>Temperature 1.0 · Top P 0.95 · Top K 0 · Min P 0<br>Model sampling stays fixed for reliable results.</p></div></details></div><div class="action-buttons"><button id="cancel" class="subtle-button" type="button" hidden>Stop</button><button id="rewrite" class="primary-button" type="button" disabled>Rewrite <span aria-hidden="true">↗</span></button></div></div>
+        </div>
+      </section>
+      <section class="editor-panel result-panel" aria-labelledby="result-heading"><div class="panel-heading"><div><h2 id="result-heading">Result</h2></div><div class="panel-tools"><button id="copy" class="small-button" type="button" disabled>Copy</button></div></div><div class="result-body"><div id="result-placeholder" class="result-placeholder"><span class="placeholder-symbol" aria-hidden="true">✳</span><p>Your rewrite will appear here.</p><span>Changes will be highlighted as you review.</span></div><div id="result-diff" class="diff-text" aria-label="Result with added text highlighted" hidden></div></div><div class="result-footer"><p id="rewrite-message" class="message" role="status" aria-live="polite">Review numbers, dates, names, and claims before using a result.</p></div></section>
+    </div>
+    <p class="workspace-note">Each rewrite uses only the current draft. No previous text is sent to the model.</p>
+  </main>
+  <dialog id="download-dialog" class="download-dialog" aria-labelledby="download-title">
+    <div class="dialog-head">
+      <div><p class="overline">DESKTOP APP</p><h2 id="download-title">Run Asenaizer on your computer</h2></div>
+      <button class="icon-button dialog-close" id="close-download" type="button" aria-label="Close">×</button>
+    </div>
+    <p class="dialog-lede">A small tray app runs the model on your GPU. The model loads only while this site is connected.</p>
+    <div class="os-tabs" role="tablist" aria-label="Operating system">
+      <button class="os-tab" id="os-windows" role="tab" type="button" aria-controls="panel-windows">Windows</button>
+      <button class="os-tab" id="os-linux" role="tab" type="button" aria-controls="panel-linux">Linux</button>
+    </div>
+    <section class="os-panel" id="panel-windows" role="tabpanel" aria-labelledby="os-windows">
+      <a class="primary-button download-button" href="https://github.com/KaanAlper/Asenaizer/releases/latest/download/Asenaizer-windows-x64-setup.exe">Download for Windows <span aria-hidden="true">↓</span></a>
+      <p class="os-note">Windows 10 or 11, 64-bit. Installs for your user account, no administrator rights needed.</p>
+    </section>
+    <section class="os-panel" id="panel-linux" role="tabpanel" aria-labelledby="os-linux" hidden>
+      <p class="os-step">Paste this into a terminal:</p>
+      <div class="command"><code id="linux-command">curl -fsSL https://raw.githubusercontent.com/KaanAlper/Asenaizer/main/scripts/install-linux.sh | bash</code><button class="small-button" id="copy-command" type="button">Copy</button></div>
+      <p class="os-note">Works on Debian, Ubuntu, Arch, Fedora and openSUSE. Missing system libraries are installed for you, and the app opens in your tray when it finishes.</p>
+    </section>
+    <p class="dialog-foot">After installing, come back and select <b>Connect this device</b>.</p>
+  </dialog>
+</body>
+</html>

@@ -51,7 +51,9 @@ func Main(o Options) int {
 	noBrowser := fl.Bool("no-browser", os.Getenv("HUMANIZER_NO_BROWSER") != "", "不自动打开浏览器")
 	webDir := fl.String("web-dir", os.Getenv("HUMANIZER_WEB_DIR"), "从磁盘读网页(开发用,改完刷新即可)")
 	port := fl.Int("port", atoiOr(os.Getenv("HUMANIZER_PORT"), 0), "网页端口(默认用配置里的固定端口,保证历史记录不丢)")
+	webOrigin := fl.String("web-origin", envOr("ASENAIZER_WEB_ORIGIN", "https://kaanalper.github.io"), "允许连接本地模型的 GitHub Pages HTTPS origin; 空值关闭")
 	idle := fl.Int("idle-exit", atoiOr(os.Getenv("HUMANIZER_IDLE_EXIT"), -1), "网页关闭多少分钟后自动退出,0=不退出,-1=用配置")
+	lazy := fl.Bool("lazy-engine", os.Getenv("ASENAIZER_LAZY_ENGINE") != "", "load the model only while the Asenaizer website is connected (tray)")
 	serve := fl.Bool("serve", false, "前台运行服务(macOS .app 内部使用)")
 	showVer := fl.Bool("version", false, "打印版本")
 	updateAPI := fl.String("update-api", os.Getenv("HUMANIZER_UPDATE_API"), "检查 App 更新用的 GitHub API 地址(开发/测试时指向假服务器)")
@@ -132,6 +134,7 @@ func Main(o Options) int {
 	}
 
 	a := &App{opts: o, cfg: cfg, dataDir: dataDir, logger: logger, logFile: lf, apiKey: randomKey(),
+		webOrigin: strings.TrimRight(*webOrigin, "/"), lazyEngine: *lazy,
 		locModelDir: sp.ModelDir, pointerDir: sp.PointerDir, dataDirLocked: sp.DataDirLock}
 	defer func() {
 		if a.logFile != nil {
@@ -224,6 +227,7 @@ func Main(o Options) int {
 		}
 	}
 	go a.idleLoop(ctx)
+	go a.lazyLoop(ctx)
 	go a.updates.autoLoop(ctx, func() bool {
 		a.mu.Lock()
 		defer a.mu.Unlock()

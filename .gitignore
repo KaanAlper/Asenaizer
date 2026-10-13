@@ -6,5 +6,10 @@ __pycache__/
 assets/preview/
 /build/
 /dist/
+/app/tray/target/
 *.egg-info/
 !eval/**/*.jsonl
+
+# Local evaluation data, not published
+/eval/turnitin_benchmark/
+/eval/dpo_dataset/

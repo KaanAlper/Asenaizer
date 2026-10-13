@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""下载钉死版本的 llama.cpp 官方二进制,校验 sha256,整理成启动器认识的目录:
+"""Download checksum-pinned official llama.cpp binaries into launcher directories:
 
   macos   → <out>/metal/{llama-server, *.dylib, LICENSE}
   windows → <out>/cpu/    {llama-server.exe, *.dll, LICENSE}
             <out>/vulkan/ {...}
-            <out>/cuda/   {... + cudart/cublas 运行库}
+            <out>/cuda/   {... + cudart/cublas runtime libraries}
 
-只保留 llama-server 及其依赖的动态库,其他命令行工具丢掉(省体积)。
-用法:python3 packaging/fetch_engine.py --target macos --out dist/engine
+Keep llama-server and its dynamic libraries; omit unrelated tools.
+Usage: python3 packaging/fetch_engine.py --target linux --out dist/engine
 """
 import argparse
 import hashlib
@@ -23,6 +23,11 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = {
     "macos": [("metal", ["macos-arm64"])],
+    "linux": [
+        ("cpu", ["ubuntu-x64"]),
+        ("vulkan", ["ubuntu-vulkan-x64"]),
+        ("cuda", ["ubuntu-cuda-12.8-x64", "ubuntu-cudart-12.8-x64"]),
+    ],
     "windows": [
         ("cpu", ["win-cpu-x64"]),
         ("vulkan", ["win-vulkan-x64"]),
@@ -43,17 +48,32 @@ def fetch(lock, key, cache):
     a = lock["assets"][key]
     dst = os.path.join(cache, a["file"])
     if os.path.exists(dst) and sha256(dst) == a["sha256"]:
-        print(f"  缓存命中 {a['file']}")
+        print(f"  Cached {a['file']}")
         return dst
     url = f"{lock['base_url']}/{a['file']}"
-    print(f"  下载 {url}")
+    print(f"  Downloading {url}")
     tmp = dst + ".tmp"
-    with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 20)
+    try:
+        with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done, last_percent = 0, -1
+            while chunk := r.read(1 << 20):
+                f.write(chunk)
+                done += len(chunk)
+                if total:
+                    percent = min(100, done * 100 // total)
+                    if percent // 10 != last_percent // 10:
+                        print(f"    {percent}% · {done / (1 << 20):.0f} / {total / (1 << 20):.0f} MiB", flush=True)
+                        last_percent = percent
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    print("    Verifying SHA-256…", flush=True)
     got = sha256(tmp)
     if got != a["sha256"]:
         os.remove(tmp)
-        sys.exit(f"sha256 不符:{a['file']}\n  期望 {a['sha256']}\n  实际 {got}")
+        sys.exit(f"SHA-256 mismatch: {a['file']}\n  expected {a['sha256']}\n  actual   {got}")
     os.replace(tmp, dst)
     return dst
 
@@ -74,7 +94,7 @@ def wanted(name):
     low = name.lower()
     if low in ("llama-server", "llama-server.exe") or low.startswith("license"):
         return True
-    return low.endswith(".dylib") or low.endswith(".dll")
+    return low.endswith((".dylib", ".dll", ".so")) or ".so." in low
 
 
 def collect(src_root, dest):
@@ -87,7 +107,7 @@ def collect(src_root, dest):
             s, d = os.path.join(root, fn), os.path.join(dest, fn)
             if os.path.lexists(d):
                 os.remove(d)
-            if os.path.islink(s):  # mac 的 libggml.dylib -> libggml.0.dylib 这类软链接原样保留
+            if os.path.islink(s):  # Preserve links such as libggml.dylib -> libggml.0.dylib.
                 os.symlink(os.readlink(s), d)
             else:
                 shutil.copy2(s, d)
@@ -98,6 +118,7 @@ def collect(src_root, dest):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", choices=sorted(LAYOUT), required=True)
+    ap.add_argument("--backend", action="append", help="Only fetch these backends (repeatable)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--cache", default=os.path.join(HERE, "..", "dist", "engine-cache"))
     args = ap.parse_args()
@@ -106,6 +127,8 @@ def main():
     os.makedirs(args.cache, exist_ok=True)
     print(f"llama.cpp {lock['tag']} ({lock['commit']}) -> {args.out}")
     for name, keys in LAYOUT[args.target]:
+        if args.backend and name not in args.backend:
+            continue
         dest = os.path.join(args.out, name)
         shutil.rmtree(dest, ignore_errors=True)
         total = 0
@@ -116,10 +139,10 @@ def main():
                 total += collect(tmp, dest)
         server = os.path.join(dest, "llama-server.exe" if args.target == "windows" else "llama-server")
         if not os.path.exists(server):
-            sys.exit(f"{name}: 压缩包里没找到 llama-server")
+            sys.exit(f"{name}: archive does not contain llama-server")
         with open(os.path.join(dest, "ENGINE_VERSION.txt"), "w") as f:
             f.write(f"llama.cpp {lock['tag']} {lock['commit']} ({', '.join(keys)})\n")
-        print(f"  {name}: {total} 个文件")
+        print(f"  {name}: {total} files")
 
 
 if __name__ == "__main__":

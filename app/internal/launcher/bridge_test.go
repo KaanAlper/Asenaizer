@@ -1,0 +1,100 @@
+package launcher
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+func bridgeRequest(t *testing.T, base, method, path, origin, key, body string) (*http.Response, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(method, base+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var result map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	return resp, result
+}
+
+// pairTestBrowser pairs a browser the way the website does and returns its key.
+func pairTestBrowser(t *testing.T, a *App) string {
+	t.Helper()
+	code := a.pairing().startCode(time.Now()).code
+	_, key, err := a.pairing().redeem(code, "Test browser", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func TestBridgeOriginAndPairing(t *testing.T) {
+	a, base := testLauncher(t)
+	a.webOrigin = "https://kaanalper.github.io"
+	key := pairTestBrowser(t, a)
+
+	resp, _ := bridgeRequest(t, base, "GET", "/bridge/ping", "https://evil.example", "", "")
+	if resp.StatusCode != 403 || resp.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("untrusted origin should be refused without CORS")
+	}
+	resp, _ = bridgeRequest(t, base, "OPTIONS", "/bridge/status", a.webOrigin, "", "")
+	if resp.StatusCode != 204 || resp.Header.Get("Access-Control-Allow-Origin") != a.webOrigin {
+		t.Fatalf("preflight: %d %v", resp.StatusCode, resp.Header)
+	}
+	resp, _ = bridgeRequest(t, base, "GET", "/bridge/status", a.webOrigin, "", "")
+	if resp.StatusCode != 401 {
+		t.Fatal("unpaired site must not read status")
+	}
+	resp, result := bridgeRequest(t, base, "GET", "/bridge/status", a.webOrigin, key, "")
+	if resp.StatusCode != 200 || result["app"] != "humanizer" {
+		t.Fatalf("paired status: %d %v", resp.StatusCode, result)
+	}
+	resp, _ = bridgeRequest(t, base, "POST", "/app/setup", a.webOrigin, key, `{}`)
+	if resp.StatusCode != 403 {
+		t.Fatal("bridge token must not grant access to old app endpoints")
+	}
+}
+
+func TestDeleteOnlyInactiveConfiguredModel(t *testing.T) {
+	a, base := testLauncher(t)
+	a.webOrigin = "https://kaanalper.github.io"
+	key := pairTestBrowser(t, a)
+	tier, _ := a.cfg.tier("q6")
+	path := a.modelPath(tier)
+	if err := os.MkdirAll(a.modelsDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.tier, a.phase = "q6", phaseReady
+	resp, _ := bridgeRequest(t, base, "POST", "/bridge/model/delete", a.webOrigin, key, `{"tier":"q6"}`)
+	if resp.StatusCode != 409 || !fileExists(path) {
+		t.Fatal("active model should not be deleted")
+	}
+	resp, _ = bridgeRequest(t, base, "POST", "/bridge/model/stop", a.webOrigin, key, `{}`)
+	if resp.StatusCode != 200 || a.phase != phaseSetup || a.tier != "" {
+		t.Fatal("active model should stop before deletion")
+	}
+	resp, result := bridgeRequest(t, base, "POST", "/bridge/model/delete", a.webOrigin, key, `{"tier":"q6"}`)
+	if resp.StatusCode != 200 || result["deleted"] != "q6" || fileExists(path) {
+		t.Fatalf("inactive deletion: %d %v", resp.StatusCode, result)
+	}
+}

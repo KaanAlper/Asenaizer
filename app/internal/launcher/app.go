@@ -65,8 +65,10 @@ type App struct {
 	pathsMu       sync.Mutex // 一次只换一次存储位置
 	port          int
 	url           string
-	apiKey        string // llama-server 的访问密钥,每次启动随机生成,只有启动器的反代知道
-	extKey        string // 外部服务的 API key(external.go),从数据目录读,只在启动器里用
+	apiKey        string        // llama-server 的访问密钥,每次启动随机生成,只有启动器的反代知道
+	pairings      *pairingStore // browsers paired with this device (pairing.go)
+	webOrigin     string        // exact HTTPS origin allowed to use the bridge
+	extKey        string        // 外部服务的 API key(external.go),从数据目录读,只在启动器里用
 
 	rootCtx  context.Context
 	shutdown context.CancelFunc
@@ -87,6 +89,11 @@ type App struct {
 
 	lastSeen atomic.Int64
 	idleExit time.Duration
+
+	lazyEngine bool         // lazy_engine.go: load the model only while the website is connected
+	lastBridge atomic.Int64 // last authenticated bridge request (unix nanos)
+	lastWork   atomic.Int64 // last website connect or rewrite (unix nanos)
+	dlLoad     bool         // load the model when the current download finishes (guarded by mu)
 
 	updates   *updater     // 检查更新(update*.go)
 	inflight  atomic.Int32 // 正在进行的改写请求
@@ -156,7 +163,7 @@ func (a *App) boot() {
 	a.tier = id
 	a.mu.Unlock()
 	if fileExists(a.modelPath(t)) {
-		a.startEngine(t)
+		a.autoStart(t)
 		return
 	}
 	part := a.modelPath(t) + ".part"
@@ -261,7 +268,14 @@ func (a *App) startDownload(t Tier, ep Endpoint) {
 			if a.updates != nil { // 记下指纹,以后检查模型更新不用再算
 				a.updates.recordFP(t.File, d.Dest, d.SHA)
 			}
-			a.startEngine(t)
+			a.mu.Lock()
+			load := a.dlLoad || !a.lazyEngine
+			a.mu.Unlock()
+			if load {
+				a.startEngine(t)
+			} else {
+				a.park(t)
+			}
 			return
 		case errors.Is(err, context.Canceled):
 			if a.phase == phaseDownloading {

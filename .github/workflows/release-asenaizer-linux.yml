@@ -1,0 +1,58 @@
+name: Build Asenaizer Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, for example 0.1.0"
+        required: true
+        default: "0.1.0"
+  push:
+    tags: ["asenaizer-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: false
+      - name: Install tray build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev libxdo-dev
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#asenaizer-v}"; fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Test Go service
+        working-directory: app
+        run: go test ./...
+      - name: Build Go service and Rust tray
+        run: |
+          mkdir -p app/dist/linux
+          (cd app && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.value }}" -o dist/linux/Humanizer .)
+          cargo build --locked --release --manifest-path app/tray/Cargo.toml
+          cp app/tray/target/release/asenaizer-tray app/dist/linux/asenaizer-tray
+      - name: Fetch verified CPU and CUDA runtimes
+        run: python3 app/packaging/fetch_engine.py --target linux --backend cpu --backend cuda --out app/dist/linux/engine
+      - name: Smoke test runtime and package
+        run: |
+          app/dist/linux/engine/cpu/llama-server --version
+          app/dist/linux/engine/cuda/llama-server --version
+          cp LICENSE app/dist/linux/LICENSE
+          tar -C app/dist/linux -czf "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz" .
+          sha256sum "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz" > "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: asenaizer-linux-${{ steps.version.outputs.value }}
+          path: |
+            Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz
+            Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz.sha256
+
+# This workflow uploads reviewable artifacts only. Release publication is a separate step.

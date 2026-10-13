@@ -21,7 +21,7 @@
       "file": "humanizer-12b-Q8_0.gguf",
       "approx_gb": 12.7,
       "min_ram_gb": 32,
-      "sha256": "",
+      "sha256": "8d7a457b56de6530eaaf0151ccfa7550a4b20dab979737e259da9c63e960e0b0",
       "note": {
         "zh": "效果最好",
         "en": "Best quality"
@@ -33,7 +33,7 @@
       "file": "humanizer-12b-Q6_K.gguf",
       "approx_gb": 10.0,
       "min_ram_gb": 16,
-      "sha256": "",
+      "sha256": "c98f03bb9e71456181f99b0e1d3391e07ce1afc357f9db4c33d6d379b8dd9f0d",
       "note": {
         "zh": "和 Q8_0 几乎一样(KL 0.003),体积小两成",
         "en": "Nearly identical to Q8_0 (KL 0.003), ~20% smaller"
@@ -45,7 +45,7 @@
       "file": "humanizer-12b-Q4_K_M.gguf",
       "approx_gb": 7.6,
       "min_ram_gb": 12,
-      "sha256": "",
+      "sha256": "2229574dec5178629575ee4a153dfee7d9e924ab997d0ad9d2ac622b67e44834",
       "note": {
         "zh": "略有损失,给 16 GB 以下的机器",
         "en": "Slight loss, for machines under 16 GB"
@@ -121,7 +121,7 @@
   "idle_exit_minutes": 30,
   "preferred_port": 47615,
   "update": {
-    "github_repo": "sgaofen/humanizer-local-model",
+    "github_repo": "KaanAlper/Asenaizer",
     "github_api": "https://api.github.com",
     "tag_prefix": "app-v",
     "interval_hours": 24

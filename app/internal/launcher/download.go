@@ -258,6 +258,7 @@ func (d *Download) Run(ctx context.Context) error {
 	if err := os.Rename(part, d.Dest); err != nil {
 		return err
 	}
+	_ = os.Chmod(d.Dest, 0o600)
 	_ = os.Remove(side)
 	return nil
 }
@@ -343,10 +344,11 @@ func redactURL(u string) string {
 var contentRangeRe = regexp.MustCompile(`^bytes (\d+)-(\d+)/(\d+|\*)$`)
 
 func (d *Download) fetchOnce(parent context.Context, part string, size int64) error {
-	f, err := os.OpenFile(part, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := os.OpenFile(part, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return &PermanentError{Code: "io", Msg: err.Error()}
 	}
+	_ = f.Chmod(0o600)
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
