@@ -76,10 +76,33 @@ function outputBudget(draft, limit) {
   const draftTokens = Math.ceil(draft.length / 3.5);
   return Math.max(256, Math.min(limit, Math.ceil(draftTokens * 2.5)));
 }
+// Live diff while the model writes: added words turn green as they arrive. Removed words are
+// only struck through on the draft at the end, because a draft word that is not used yet may
+// still come later in the rewrite. Rendering is throttled; the word diff is O(draft x result).
+const LIVE_DIFF_MS = 120;
+const live = { draft: '', text: '', frame: 0, last: 0 };
+function startLive(draft) {
+  cancelAnimationFrame(live.frame);
+  Object.assign(live, { draft, text: '', frame: 0, last: 0 });
+}
 function showLive(text) {
-  $('result-placeholder').hidden = true; $('result-diff').hidden = false;
-  $('result-diff').classList.remove('result-diff');
-  $('result-diff').textContent = text;
+  live.text = text;
+  if (!live.frame) live.frame = requestAnimationFrame(renderLive);
+}
+function renderLive(now) {
+  live.frame = 0;
+  if (now - live.last < LIVE_DIFF_MS) { live.frame = requestAnimationFrame(renderLive); return; }
+  live.last = now;
+  const target = $('result-diff');
+  const body = target.parentElement;
+  const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+  const diff = wordDiff(live.draft, live.text);
+  const kept = new Set(diff.keptB);
+  if (diff.b.length && !/\s$/.test(live.text)) kept.add(diff.b.length - 1); // word still being written
+  renderDiff(target, live.text, diff.b, kept);
+  target.classList.add('result-diff');
+  $('result-placeholder').hidden = true; target.hidden = false;
+  if (atBottom) body.scrollTop = body.scrollHeight;
 }
 function missingNumbers(draft, result) {
   const original = draft.match(/\d+(?:[.,]\d+)*/g) || [];
@@ -246,6 +269,7 @@ function renderDiff(target, text, tokens, kept) {
   target.replaceChildren(fragment);
 }
 function showResult(draft, result) {
+  cancelAnimationFrame(live.frame); live.frame = 0; // a pending live frame must not overwrite the final diff
   state.currentDraft = draft; state.currentResult = result;
   const diff = wordDiff(draft, result);
   renderDiff($('draft-diff'), draft, diff.a, diff.keptA);
@@ -405,6 +429,7 @@ $('rewrite').onclick = async () => {
     const cfg = state.config;
     let selected = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
+      startLive(draft);
       const text = await streamCompletion({
         prompt: cfg.instr + '\n\n' + draft + cfg.sep,
         ...cfg.sampling, n_predict: outputBudget(draft, Number($('output-limit').value))
