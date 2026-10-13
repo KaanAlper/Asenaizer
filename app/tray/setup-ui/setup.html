@@ -1,0 +1,382 @@
+<!doctype html>
+<!-- Asenaizer Setup (Linux): the page of src/bin/asenaizer-setup.rs. It reproduces installer/gui/Setup.cs (the Windows
+     setup window): the same pages (Options, Progress, Result), palette and layout on a 760 x 540 canvas, with its English texts.
+     {{ICON_SVG}} is filled in by the binary. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Asenaizer Setup</title>
+<style>
+  /* the warm dark theme of the Asenaizer site (docs/style.css), as in Setup.cs */
+  :root {
+    --bg: #0f0d0b; --surface: #181512; --surface2: #221e1a; --outline: #43392f;
+    --fg: #f4eee4; --sub: #c9bfb1; --dim: #8e8478; --ok: #5fd39a; --err: #ff8a7d;
+    --warn: #ffb77c; --accent: #a48bff; --accent-hover: #b6a1ff; --on-accent: #120d24;
+    /* Mix(Bg, tone, t) from Setup.cs, worked out */
+    --ok-18: #1d3024; --err-18: #3a231f; --ok-22: #20382a; --err-22: #432824; --warn-box: #33281e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 760px; height: 540px; overflow: hidden; background: var(--bg); color: var(--fg); }
+  body {
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, "Inter", "Cantarell", "Noto Sans", "Ubuntu", sans-serif;
+    font-size: 13px; -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default;
+  }
+  .abs { position: absolute; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-act] { cursor: pointer; }
+
+  /* header: icon, name, step dots, close */
+  .mark { position: absolute; left: 18px; top: 18px; width: 24px; height: 24px; }
+  .mark svg { width: 24px; height: 24px; display: block; }
+  .name { left: 50px; top: 19px; width: 300px; height: 24px; line-height: 24px; font-size: 15px; font-weight: 700; }
+  .dots { position: absolute; left: 620px; top: 26px; display: flex; gap: 10px; }
+  .dots i { display: block; width: 8px; height: 8px; border-radius: 4px; background: var(--outline); transition: width .2s; }
+  .dots i.on { width: 22px; background: var(--accent); }
+  .close { position: absolute; left: 708px; top: 14px; width: 36px; height: 32px; border-radius: 10px; }
+  .close:hover { background: var(--surface2); }
+  .close svg { display: block; }
+
+  /* the page slides in from the right */
+  #page { position: absolute; inset: 0; }
+  .pg { position: absolute; inset: 0; }
+  .pg.slide { animation: slide 220ms cubic-bezier(.33, 1, .68, 1); }
+  @keyframes slide { from { transform: translateX(28px); } to { transform: none; } }
+
+  .h1 { left: 40px; top: 82px; width: 680px; height: 36px; line-height: 36px; font-size: 24px; font-weight: 700; }
+  .lead { position: absolute; left: 40px; top: 120px; width: 680px; font-size: 13px; line-height: 1.45; color: var(--sub); }
+  .ver { left: 40px; top: 120px; width: 600px; height: 22px; line-height: 22px; color: var(--sub); }
+  .label { left: 40px; top: 186px; height: 20px; line-height: 20px; font-weight: 700; color: var(--sub); }
+  .foot { left: 40px; top: 480px; width: 480px; height: 20px; line-height: 20px; font-size: 12px; color: var(--dim); }
+
+  /* toggles */
+  .toggle { position: absolute; left: 32px; width: 696px; height: 34px; border-radius: 12px; }
+  .toggle:hover { background: var(--surface); }
+  .switch { position: absolute; left: 8px; top: 6px; width: 40px; height: 22px; border-radius: 11px; background: var(--surface2);
+            box-shadow: inset 0 0 0 1.2px var(--outline); }
+  .switch::after { content: ""; position: absolute; left: 5px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim); }
+  .toggle.on .switch { background: var(--accent); box-shadow: none; }
+  .toggle.on .switch::after { left: 21px; top: 3px; width: 16px; height: 16px; background: var(--on-accent); }
+  .toggle .text { left: 62px; top: 6px; width: 600px; height: 22px; line-height: 22px; color: var(--sub); }
+  .toggle.on .text { color: var(--fg); }
+
+  /* buttons */
+  .btn { position: absolute; top: 468px; height: 44px; border-radius: 22px; line-height: 44px; text-align: center;
+         font-size: 14px; font-weight: 700; background: var(--surface); color: var(--fg); white-space: nowrap; }
+  .btn:hover { background: var(--surface2); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover { background: var(--accent-hover); }
+
+  /* step rows: pending dot, spinner, check, cross */
+  .row { left: 76px; width: 600px; height: 22px; line-height: 22px; }
+  .row.pending { color: var(--dim); }
+  .row.running { font-weight: 700; }
+  .st { position: absolute; left: 46px; width: 20px; height: 20px; }
+  .st.pending::after { content: ""; position: absolute; left: 7px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--outline); }
+  .st.done { border-radius: 50%; background: var(--ok-22); }
+  .st.failed { border-radius: 50%; background: var(--err-22); }
+  .st svg { position: absolute; left: 2px; top: 2px; }
+  .spin { animation: spin 1s linear infinite; transform-origin: 8px 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .bar { position: absolute; height: 6px; border-radius: 3px; background: var(--surface2); }
+  .bar b { display: block; height: 6px; border-radius: 3px; background: var(--accent); min-width: 6px; }
+  .small { height: 20px; line-height: 20px; font-size: 12px; color: var(--dim); white-space: pre; }
+  .file { font-size: 11.5px; }
+
+  /* result */
+  .badge { position: absolute; left: 40px; top: 86px; width: 64px; height: 64px; border-radius: 50%; }
+  .badge.ok { background: var(--ok-18); }
+  .badge.err { background: var(--err-18); }
+  .badge svg { position: absolute; left: 12px; top: 12px; }
+  .rtitle { left: 120px; top: 100px; width: 600px; height: 34px; line-height: 34px; font-size: 22px; font-weight: 700; }
+  .rflow { position: absolute; left: 40px; top: 170px; width: 680px; max-height: 264px; overflow: hidden auto; }
+  .rflow::-webkit-scrollbar { width: 6px; }
+  .rflow::-webkit-scrollbar-thumb { background: var(--outline); border-radius: 3px; }
+  .rbody { font-size: 13px; line-height: 1.45; color: var(--sub); white-space: pre-wrap; margin-bottom: 12px; user-select: text; -webkit-user-select: text; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; column-gap: 24px; padding-left: 8px; white-space: normal; }
+  .kv span:nth-child(odd) { color: var(--dim); }
+  .kv span:nth-child(even) { color: var(--fg); }
+  .rdetail { font-size: 12px; line-height: 1.4; color: var(--dim); white-space: pre-wrap; word-break: break-word; margin-bottom: 8px;
+             user-select: text; -webkit-user-select: text; }
+  .warnbox { background: var(--warn-box); border-radius: 16px; padding: 10px 16px 12px; }
+  .warnbox .wt { font-weight: 700; color: var(--warn); line-height: 20px; margin-bottom: 4px; }
+  .warnbox .wi { font-size: 12.5px; line-height: 22px; color: var(--fg); }
+  .warnbox .wb { font-size: 12px; line-height: 1.4; color: var(--dim); margin-top: 2px; }
+  .rlog { left: 40px; top: 440px; width: 560px; height: 18px; line-height: 18px; font-size: 11.5px; color: var(--dim);
+          user-select: text; -webkit-user-select: text; }
+</style>
+</head>
+<body>
+<span class="mark" aria-hidden="true">{{ICON_SVG}}</span>
+<div class="abs name">Asenaizer</div>
+<div class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+<div class="close" data-act="close" title="Close">
+  <svg width="36" height="32" viewBox="0 0 36 32"><path d="M13.5 11.5 22.5 20.5M22.5 11.5 13.5 20.5" stroke="#c9bfb1" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>
+</div>
+<div id="page"></div>
+<script>
+"use strict";
+const W = 760, H = 540;
+
+// ---------------------------------------------------------------- choices and install state
+const opts = { startup: true, desktop: false, launch: true };
+let page = "options";
+let phase = "", version = "";
+let dlPercent = 0, dlDone = 0, dlTotal = 0, dlSpeed = 0;
+const speedSamples = [];
+let steps = [];
+let stepN = 0, stepState = "running", stepPercent = 0, stepFile = "";
+let result = { ok: false, title: "", body: "", detail: "", log: "", warnTitle: "", warnBody: "", warn: [] };
+let started = false, cancelRequested = false, lastHtml = "";
+
+const send = (msg) => { try { window.ipc.postMessage(typeof msg === "string" ? msg : JSON.stringify(msg)); } catch (e) {} };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = (v, def) => (typeof v === "number" && isFinite(v) ? v : def);
+const str = (v) => (typeof v === "string" ? v : v == null ? null : String(v));
+const strings = (v) => (Array.isArray(v) ? v.filter((x) => x != null).map(String) : typeof v === "string" && v ? [v] : []);
+const isFinal = (p) => p === "done" || p === "error" || p === "cancelled";
+
+// ---------------------------------------------------------------- drawn pieces
+const check = (size, color) => {
+  const w = Math.max(1.5, size / 14);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><polyline points="${size * 0.24},${size * 0.52} ${size * 0.43},${size * 0.70} ${size * 0.78},${size * 0.32}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+};
+const cross = (size, color) => {
+  const a = size * 0.32, b = size - a, w = Math.max(1.5, size / 14);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><path d="M${a} ${a} ${b} ${b}M${b} ${a} ${a} ${b}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/></svg>`;
+};
+// the spinner keeps turning across redraws: its animation starts at the shared clock
+const spinner = () =>
+  `<svg width="16" height="16" viewBox="0 0 16 16"><circle class="spin" style="animation-delay:-${Math.round(performance.now() % 1000)}ms" cx="8" cy="8" r="7" fill="none" stroke="#a48bff" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="${(2 * Math.PI * 7 * 260 / 360).toFixed(2)} 100"/></svg>`;
+
+// state: 0 pending, 1 running, 2 done, 3 failed
+function stepRow(y, label, state) {
+  const cls = ["pending", "running", "done", "failed"][state];
+  let icon = "";
+  if (state === 1) icon = spinner();
+  else if (state === 2) icon = check(16, "#5fd39a");
+  else if (state === 3) icon = cross(16, "#ff8a7d");
+  return `<div class="st ${cls}" style="top:${y + 1}px">${icon}</div><div class="abs row ${cls}" style="top:${y}px">${esc(label)}</div>`;
+}
+const progressBar = (x, y, w, frac) =>
+  `<div class="bar" style="left:${x}px;top:${y}px;width:${w}px"><b style="width:${Math.max(6, w * Math.max(0, Math.min(1, frac)))}px"></b></div>`;
+const button = (act, label, x, w, primary) =>
+  `<div class="btn${primary ? " primary" : ""}" data-act="${act}" style="left:${x}px;width:${w}px">${esc(label)}</div>`;
+const toggle = (key, label, y) =>
+  `<div class="toggle${opts[key] ? " on" : ""}" data-act="toggle:${key}" style="top:${y - 2}px"><div class="switch"></div><div class="abs text">${esc(label)}</div></div>`;
+
+// "42%   14.0 / 33.0 MB · 5.2 MB/s"
+function downloadText() {
+  let s = dlPercent + "%";
+  if (dlTotal > 0) s += `   ${(dlDone / 1048576).toFixed(1)} / ${(dlTotal / 1048576).toFixed(1)} MB`;
+  if (dlSpeed > 0) s += ` · ${(dlSpeed / 1048576).toFixed(1)} MB/s`;
+  return s;
+}
+
+// ---------------------------------------------------------------- pages
+function optionsPage() {
+  return `<div class="abs h1">${esc("Install Asenaizer")}</div>
+    <div class="lead">${esc("Rewrite drafts in your browser with a model that runs on this computer's GPU.")}</div>
+    <div class="abs label">${esc("Options")}</div>
+    ${toggle("startup", "Start Asenaizer when I sign in", 216)}
+    ${toggle("desktop", "Add a desktop shortcut", 256)}
+    ${toggle("launch", "Open Asenaizer when setup finishes", 296)}
+    <div class="abs foot">${esc("Installs for your account only.")}</div>
+    ${button("install", "Install", W - 40 - 160, 160, true)}`;
+}
+
+function progressPage() {
+  const rollingBack = cancelRequested || stepState === "rollback";
+  let h = `<div class="abs h1">${esc(rollingBack ? "Rolling back…" : "Installing")}</div>`;
+  if (version) h += `<div class="abs ver">Asenaizer ${esc(/^\d/.test(version) ? "v" + version : version)}</div>`;
+  let y = 156;
+  if (steps.length === 0) {
+    // before the steps: the script's own phases
+    const ids = ["release", "download", "verify", "extract"];
+    const labels = ["Finding the latest release", "Downloading",
+      "Verifying", "Extracting"];
+    const cur = ids.indexOf(phase);
+    for (let i = 0; i < ids.length; i++) {
+      h += stepRow(y, labels[i], i < cur ? 2 : i === cur ? 1 : 0);
+      if (i === cur && phase === "download") {
+        h += progressBar(76, y + 30, 360, dlPercent / 100);
+        h += `<div class="abs small" style="left:450px;top:${y + 22}px;width:290px">${esc(downloadText())}</div>`;
+        y += 26;
+      }
+      y += 34;
+    }
+  } else {
+    h += stepRow(y, "Preparation", 2);
+    y += 30;
+    for (let i = 0; i < steps.length; i++) {
+      const state = i + 1 < stepN || stepState === "done" ? 2 : i + 1 === stepN ? (stepState === "error" ? 3 : 1) : 0;
+      h += stepRow(y, steps[i], state);
+      if (state === 1) {
+        h += progressBar(76, y + 26, 420, Math.max(0, Math.min(99, stepPercent)) / 100);
+        if (stepFile) h += `<div class="abs small file" style="left:510px;top:${y + 18}px;width:220px">${esc(stepFile)}</div>`;
+        y += 18;
+      }
+      y += 24;
+    }
+  }
+  if (!cancelRequested) h += button("cancel", "Cancel", W - 40 - 120, 120, false);
+  return h;
+}
+
+// The body as text; its indented "Label    value" lines (aligned with spaces for the terminal) become a two-column
+// table, since a proportional font cannot keep them aligned.
+function bodyHtml(body) {
+  let out = "", rows = "";
+  const flush = () => { if (rows) { out += `<div class="kv">${rows}</div>`; rows = ""; } };
+  for (const line of body.split("\n")) {
+    const m = /^ {2}(\S.*?)\s{2,}(\S.*)$/.exec(line);
+    if (m) { rows += `<span>${esc(m[1])}</span><span>${esc(m[2])}</span>`; continue; }
+    flush();
+    out += esc(line) + "\n";
+  }
+  flush();
+  return out.replace(/\n+$/, "");
+}
+
+function resultPage() {
+  const r = result;
+  let h = `<div class="badge ${r.ok ? "ok" : "err"}">${r.ok ? check(40, "#5fd39a") : cross(40, "#ff8a7d")}</div>
+    <div class="abs rtitle">${esc(r.title)}</div><div class="rflow">`;
+  if (r.body) h += `<div class="rbody">${bodyHtml(r.body)}</div>`;
+  if (r.detail) h += `<div class="rdetail">${esc(r.detail)}</div>`;
+  if (r.warn.length) {
+    h += `<div class="warnbox"><div class="wt">${esc(r.warnTitle)}</div>`;
+    for (const w of r.warn) h += `<div class="wi">•&nbsp;&nbsp;${esc(w)}</div>`;
+    h += `<div class="wb">${esc(r.warnBody)}</div></div>`;
+  }
+  h += `</div>`;
+  if (r.log) h += `<div class="abs rlog" title="${esc(r.log)}">${esc(r.log)}</div>`;
+  h += button("done", "Close", W - 40 - 140, 140, true);
+  return h;
+}
+
+function render(slide) {
+  const html = page === "options" ? optionsPage() : page === "progress" ? progressPage() : resultPage();
+  const root = document.getElementById("page");
+  if (slide || !root.firstChild) {
+    root.innerHTML = `<div class="pg slide">${html}</div>`;
+  } else if (html !== lastHtml) {
+    root.firstChild.innerHTML = html;
+  }
+  lastHtml = html;
+  const dots = document.querySelectorAll(".dots i");
+  const dot = page === "options" ? 0 : page === "progress" ? 1 : 2;
+  dots.forEach((d, i) => d.classList.toggle("on", i === dot));
+}
+
+function go(p) { page = p; render(true); }
+
+// ---------------------------------------------------------------- the install
+function startInstall() {
+  if (started) return; // Enter pressed twice
+  started = true;
+  phase = "release";
+  send({ cmd: "start", startup: opts.startup, desktop: opts.desktop, launch: opts.launch });
+  go("progress");
+}
+
+function requestCancel() {
+  if (cancelRequested || !started) return;
+  cancelRequested = true;
+  send("cancel");
+  render(false);
+}
+
+function closeClicked() {
+  if (page === "progress") requestCancel();
+  else send("close");
+}
+
+function finish(ok, title, body, detail, log) {
+  Object.assign(result, { ok, title: title || "", body: body || "", detail: detail || "", log: log || "" });
+  go("result");
+}
+
+// Download speed over the last few seconds of "done" samples (one per poll), so it stays steady when the script
+// reports in bursts. A restarted download (done goes down) starts the window again.
+function sampleSpeed() {
+  if (phase !== "download") { speedSamples.length = 0; dlSpeed = 0; return; }
+  const now = performance.now();
+  if (speedSamples.length && dlDone < speedSamples[speedSamples.length - 1].done) { speedSamples.length = 0; dlSpeed = 0; }
+  speedSamples.push({ t: now, done: dlDone });
+  while (speedSamples.length > 2 && now - speedSamples[0].t > 3000) speedSamples.shift();
+  const first = speedSamples[0];
+  const span = (now - first.t) / 1000;
+  if (span >= 0.5) dlSpeed = Math.max(0, (dlDone - first.done) / span);
+}
+
+// ---------------------------------------------------------------- from the binary (about every 100 ms)
+window.aszUpdate = (st, p) => {
+  if (page !== "progress") return;
+  if (st && typeof st === "object") {
+    phase = str(st.phase) ?? phase;
+    version = str(st.version) ?? version;
+    dlPercent = num(st.percent, dlPercent);
+    dlDone = num(st.done, dlDone);
+    dlTotal = num(st.total, dlTotal);
+    const s = strings(st.steps);
+    if (s.length) steps = s;
+    if (isFinal(phase)) {
+      result.warnTitle = str(st.warnTitle) || "";
+      result.warnBody = str(st.warnBody) || "";
+      result.warn = strings(st.warn);
+      finish(phase === "done",
+        str(st.title) ?? (phase === "done" ? "Installed" : "Setup failed"),
+        str(st.body) ?? str(st.message), str(st.detail), str(st.log));
+      return;
+    }
+  }
+  sampleSpeed();
+  if (p && typeof p === "object") {
+    stepN = num(p.n, stepN);
+    stepState = str(p.state) ?? stepState;
+    stepPercent = num(p.percent, stepPercent);
+    stepFile = str(p.file) || "";
+  }
+  render(false);
+};
+// the script ended without a result (it was killed, or bash itself failed)
+window.aszExited = (code) => {
+  if (page !== "progress") return;
+  finish(false, "Setup stopped unexpectedly",
+    "Nothing was left half-done; you can try again.", "exit " + code, null);
+};
+window.aszFail = (message) => finish(false, "Setup could not start", message, null, null);
+// closed from the window manager while installing: the binary already asked the script to roll back
+window.aszCancelRequested = () => { if (page === "progress" && !cancelRequested) { cancelRequested = true; render(false); } };
+
+// ---------------------------------------------------------------- input
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act.startsWith("toggle:")) { const k = act.slice(7); opts[k] = !opts[k]; render(false); }
+  else if (act === "install") startInstall();
+  else if (act === "cancel") requestCancel();
+  else if (act === "done") send("close");
+  else if (act === "close") closeClicked();
+});
+// anywhere else moves the window
+document.addEventListener("mousedown", (e) => {
+  if (e.button !== 0 || e.target.closest("[data-act], .rbody, .rdetail, .rlog")) return;
+  e.preventDefault();
+  send("drag");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); closeClicked(); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (page === "options") startInstall();
+    else if (page === "result") send("close");
+  }
+});
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+render(true);
+send("ready");
+</script>
+</body>
+</html>

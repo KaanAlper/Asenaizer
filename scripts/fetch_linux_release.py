@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tarfile
 import time
@@ -73,7 +74,8 @@ class Reporter:
             self.report("download", percent=percent, done=done, total=total, speed=int(speed))
             return
         self.check_cancel()
-        width = 30
+        # one line redrawn in place: narrower than the terminal, or each redraw wraps onto a new line
+        width = max(5, min(30, shutil.get_terminal_size((80, 24)).columns - 50))
         filled = width * percent // 100
         print(f"\r  [{'█' * filled}{'░' * (width - filled)}] {percent:3d}%  "
               f"{done / 1e6:7.1f} / {total / 1e6:.1f} MB  {speed / 1e6:5.1f} MB/s",
