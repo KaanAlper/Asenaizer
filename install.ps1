@@ -10,6 +10,7 @@
 #                                 $env:ASZ_DESKTOP = 1        add a desktop shortcut
 #                                 $env:ASZ_NO_LAUNCH = 1      do not open Asenaizer when done
 #                                 $env:ASZ_PLAIN = 1          simple numbered / yes-no prompts instead of gum
+#                                 $env:ASZ_NO_GUI = 1         stay in the console even on a desktop
 #                                 $env:ASZ_DRIVER = <folder>  driven by the setup app (Asenaizer-Setup-x64.exe): no
 #                                                             questions, phases in <folder>\status.json, <folder>\cancel stops
 #                                 $env:ASZ_PREVIEW = 1        walk through the wizard, the download and a simulated install;
@@ -30,6 +31,7 @@ function Get-Texts([bool]$tr) {
 if ($tr) { @{
         tagline = 'Asenaizer: yapay zekâ taslaklarını kendi bilgisayarında, bir insan yazmış gibi yeniden yazar'
         preparing = 'Hazırlanıyor'; release = 'Son sürüm aranıyor'
+        guiOpen = 'Kurulum penceresi açılıyor'; guiClosed = 'Kurulum penceresi kapandı.'; guiFallback = 'Kurulum penceresi açılamadı; kurulum burada sürüyor.'
         noRelease = 'Henüz doğrulanabilir bir Asenaizer sürümü yayımlanmamış.'
         welcome = "Asenaizer'a hoş geldin"
         welcomeBody = "Birkaç kısa soru soracağız, sonra gerisini biz hallederiz. Asenaizer yalnızca senin hesabına kurulur; yönetici izni gerekmez.`nHer değişiklik yedeklenir; bir şey ters giderse ya da vazgeçersen her şey eski haline döner."
@@ -62,6 +64,7 @@ if ($tr) { @{
     } } else { @{
         tagline = 'Asenaizer: rewrites AI drafts so they read like a person wrote them, on your own computer'
         preparing = 'Getting ready'; release = 'Looking for the latest release'
+        guiOpen = 'Opening the setup window'; guiClosed = 'The setup window closed.'; guiFallback = 'The setup window could not open; setup continues here.'
         noRelease = 'No verifiable Asenaizer release has been published yet.'
         welcome = 'Welcome to Asenaizer'
         welcomeBody = "A few quick questions, then we take care of the rest. Asenaizer installs for your account only; no administrator permission is needed.`nEvery change is backed up; if something goes wrong or you cancel, everything goes back to how it was."
@@ -374,6 +377,36 @@ function Report([hashtable]$status) {
         Move-Item -LiteralPath $tmp -Destination (Join-Path $driver 'status.json') -Force
     } catch {}
 }
+# On a desktop the one-liner hands over to the setup window, Asenaizer-Setup-x64.exe from the "setup"
+# release (the same program as the website's download, with this script embedded). It runs only for
+# a person at a desktop: not over SSH, not in session 0 or Server Core (no Explorer in this
+# session), not when automated (ASZ_DEFAULTS, ASZ_SOURCE, redirected input) or when ASZ_NO_GUI is set.
+function Test-Desktop {
+    if ($env:ASZ_NO_GUI -eq '1' -or $env:ASZ_SOURCE -or $env:SSH_CONNECTION -or $env:SSH_CLIENT) { return $false }
+    $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    if ($session -eq 0) { return $false }
+    [bool](Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session })
+}
+# Downloads and verifies the setup window and runs it; returns its exit code, or $null when it could not start.
+function Open-SetupWindow {
+    try {
+        $base = "https://github.com/$repo/releases/download/setup"
+        $exe = Join-Path $work 'Asenaizer-Setup-x64.exe'
+        $web = New-Object Net.WebClient
+        $web.Headers['User-Agent'] = 'Asenaizer-Install'
+        $want = ($web.DownloadString("$base/Asenaizer-Setup-x64.exe.sha256").Trim() -split '\s+')[0]
+        if ($want -notmatch '^[0-9a-fA-F]{64}$') { throw 'no checksum for the setup window' }
+        With-Spinner $T.guiOpen { $web.DownloadFile("$base/Asenaizer-Setup-x64.exe", $exe) } | Out-Null
+        if ((Get-FileHash $exe -Algorithm SHA256).Hash -ne $want.ToUpper()) { throw 'setup window checksum mismatch' }
+        $p = Start-Process -FilePath $exe -PassThru -Wait
+        Say $GL.ok $C.ok $T.guiClosed
+        return $p.ExitCode
+    } catch {
+        Say '!' $C.warn $T.guiFallback
+        return $null
+    }
+}
+
 function Fail-Box([string]$color, [string]$title, [string]$message) {
     Report @{ phase = 'error'; version = [string]$ver; title = $title; message = $message }
     Box $color $title $message
@@ -396,6 +429,11 @@ try {
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -lt 19041) { Fail-Box $C.err $T.errTitle ($T.oldWin -f $build); return }
     if (-not [Environment]::Is64BitOperatingSystem) { Fail-Box $C.err $T.errTitle $T.not64; return }
+
+    if ($interactive -and (Test-Desktop)) {
+        $code = Open-SetupWindow
+        if ($null -ne $code) { $global:LASTEXITCODE = $code; return }
+    }
 
     # gum (the prompts); without it the prompts are simple numbered / yes-no questions
     if ($interactive -and $env:ASZ_PLAIN -ne '1') {

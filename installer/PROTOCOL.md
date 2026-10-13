@@ -57,6 +57,7 @@ Asenaizer-windows-x64-<ver>.zip
 | `ASZ_NO_LAUNCH` | `1` = do not open Asenaizer when done |
 | `ASZ_PREVIEW` | Simulated install, no changes (`fail` / `warn` variants like Logical Lunge) |
 | `ASZ_PLAIN` | `1` = simple numbered prompts instead of gum in the console |
+| `ASZ_NO_GUI` | `1` = stay in the console. Otherwise the one-liner, run by a person at a desktop (not SSH, session 0, Server Core or automated runs), downloads `Asenaizer-Setup-x64.exe` from the `setup` release, verifies its `.sha256` and opens it; any failure falls back to the console |
 
 ## status.json (install.ps1 → GUI, in `ASZ_DRIVER`)
 
