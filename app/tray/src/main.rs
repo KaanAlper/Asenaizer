@@ -124,15 +124,11 @@ fn open_site_with_code(code: &str) {
     }
 }
 
+/// The app icon (app/packaging/icon/asenaizer-app.svg) as 64x64 RGBA, rendered at build time
+/// by scripts so the tray needs no image decoder.
 fn icon() -> Icon {
-    let mut rgba = vec![0_u8; 32 * 32 * 4];
-    for y in 0..32 { for x in 0..32 {
-        let i = (y * 32 + x) * 4;
-        let mark = (x > 6 && x < 25 && y > 6 && y < 25) &&
-            ((x as i32 - 16).abs() + (y as i32 - 16).abs() < 14);
-        rgba[i..i + 4].copy_from_slice(if mark { &[36, 30, 51, 255] } else { &[201, 182, 255, 255] });
-    }}
-    Icon::from_rgba(rgba, 32, 32).expect("valid icon")
+    const SIZE: u32 = 64;
+    Icon::from_rgba(include_bytes!("../assets/icon-64.rgba").to_vec(), SIZE, SIZE).expect("valid icon")
 }
 
 fn main() {

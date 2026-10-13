@@ -122,7 +122,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 /* Top bar */
 .topbar { height: 68px; padding: 0 clamp(20px, 3.5vw, 60px); display: flex; align-items: center; justify-content: space-between; background: var(--surface); border-bottom: 1px solid var(--line); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-size: 18px; font-weight: 700; letter-spacing: -.05em; }
-.brand-symbol { color: var(--accent); font-size: 30px; line-height: 1; font-weight: 400; }
+.brand-symbol { width: 30px; height: 30px; border-radius: 8px; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
 .download-trigger { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--ink); padding: 7px 14px; font-size: 12.5px; font-weight: 600; transition: border-color .15s, background .15s; }
 .download-trigger:hover { border-color: var(--ink); }
@@ -154,7 +154,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .connect-screen { min-height: calc(100vh - 68px); display: grid; place-items: center; position: relative; padding: 40px 24px 70px;
   background: radial-gradient(70% 55% at 50% 0%, var(--glow) 0%, transparent 70%), var(--bg); }
 .connect-content { width: min(100%, 520px); text-align: center; }
-.connect-emblem { width: 76px; height: 76px; margin: 0 auto 30px; display: grid; place-items: center; border-radius: 22px; background: var(--accent); color: var(--accent-ink); font-size: 46px; box-shadow: var(--emblem-shadow); }
+.connect-emblem { display: block; width: 76px; height: 76px; margin: 0 auto 30px; border-radius: 18px; box-shadow: var(--emblem-shadow); }
 .overline { margin: 0 0 12px; color: var(--accent-text); letter-spacing: .17em; font-size: 10.5px; font-weight: 750; }
 .connect-content h1 { margin: 0; font-size: clamp(37px, 5vw, 56px); letter-spacing: -.06em; line-height: 1.05; font-weight: 700; color: var(--ink); }
 .connect-lede { color: var(--ink-2); font-size: 15.5px; line-height: 1.7; max-width: 440px; margin: 18px auto 28px; }
@@ -297,7 +297,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 @media (max-width: 560px) {
   .topbar { padding: 0 14px; }
   .brand { font-size: 16px; }
-  .brand-symbol { font-size: 26px; }
+  .brand-symbol { width: 26px; height: 26px; }
   .top-actions { gap: 6px; }
   .download-trigger { width: 34px; height: 34px; padding: 0; justify-content: center; }
   .download-trigger .dl-text { display: none; }

@@ -58,7 +58,7 @@ main { display: flex; flex-direction: column; height: 100%; padding: 14px 18px; 
 
 /* The header doubles as the drag handle of the frameless window. */
 header { display: flex; align-items: center; gap: 10px; padding-bottom: 14px; cursor: default; }
-.mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 18px; }
+.mark { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand strong { font-size: 15px; letter-spacing: -.04em; }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 10.5px; font-weight: 600; }

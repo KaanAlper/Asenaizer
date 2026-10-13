@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -73,7 +74,7 @@ func TestPairingStoresOnlyKeyHashAndSurvivesRestart(t *testing.T) {
 	if strings.Contains(string(raw), key) {
 		t.Fatal("pairings.json must not contain the key itself")
 	}
-	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(path); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 { // Windows has no Unix modes
 		t.Fatalf("pairings.json mode = %v, want 0600", st.Mode().Perm())
 	}
 	reloaded := loadPairings(path)

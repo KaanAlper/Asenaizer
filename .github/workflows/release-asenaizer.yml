@@ -1,0 +1,115 @@
+name: Release Asenaizer
+
+# Push a tag like asenaizer-v0.1.0 to build Linux and Windows and publish a GitHub release.
+# Run it by hand to build the packages as workflow artifacts without publishing.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, for example 0.1.0"
+        required: true
+        default: "0.1.0"
+  push:
+    tags: ["asenaizer-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: false
+      - name: Install tray build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev libxdo-dev
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#asenaizer-v}"; fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Test Go service and tray
+        run: |
+          (cd app && go test ./...)
+          cargo test --locked --manifest-path app/tray/Cargo.toml
+      - name: Build Go service and Rust tray
+        run: |
+          mkdir -p app/dist/linux
+          (cd app && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.value }}" -o dist/linux/Humanizer .)
+          cargo build --locked --release --manifest-path app/tray/Cargo.toml
+          cp app/tray/target/release/asenaizer-tray app/dist/linux/asenaizer-tray
+      - name: Fetch verified CPU and CUDA runtimes
+        run: python3 app/packaging/fetch_engine.py --target linux --backend cpu --backend cuda --out app/dist/linux/engine
+      - name: Smoke test runtime and package
+        run: |
+          app/dist/linux/engine/cpu/llama-server --version
+          app/dist/linux/engine/cuda/llama-server --version
+          cp LICENSE NOTICE app/dist/linux/
+          tar -C app/dist/linux -czf "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz" .
+          sha256sum "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz" > "Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux
+          if-no-files-found: error
+          path: |
+            Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz
+            Asenaizer-${{ steps.version.outputs.value }}-linux-x64.tar.gz.sha256
+
+  windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: false
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then version="${GITHUB_REF_NAME#asenaizer-v}"; fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - name: Fetch verified CPU, Vulkan and CUDA runtimes
+        run: python packaging/fetch_engine.py --target windows --out dist/engine
+      - name: Build service, tray and installer
+        run: bash packaging/windows/build_asenaizer_win.sh "${{ steps.version.outputs.value }}"
+      - name: Smoke test the packaged runtime
+        run: |
+          dist/asenaizer-win/engine/cpu/llama-server.exe --version
+          test -s dist/asenaizer-win/asenaizer-tray.exe
+          test -s dist/asenaizer-win/Humanizer.exe
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            app/dist/Asenaizer-windows-x64-setup.exe
+            app/dist/Asenaizer-windows-x64-setup.exe.sha256
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/asenaizer-v')
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      # Not a draft: the website links to releases/latest/download/..., which ignores drafts.
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          name: Asenaizer ${{ github.ref_name }}
+          make_latest: true
+          files: out/*

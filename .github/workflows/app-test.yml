@@ -101,6 +101,15 @@ jobs:
         run: bash packaging/windows/build_win.sh 0.0.1
       - name: 装 → 改位置(D 盘中文/空格/长路径)→ 卸载,核对只删自己的文件
         run: python devtools/win_storage_test.py dist/Humanizer-0.0.1-windows-x64-setup.exe
+      - name: Asenaizer installer builds, installs silently and uninstalls cleanly
+        run: |
+          bash packaging/windows/build_asenaizer_win.sh 0.0.1
+          dist/Asenaizer-windows-x64-setup.exe //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //TASKS=""
+          app_dir="$LOCALAPPDATA/Programs/Asenaizer"
+          for f in asenaizer-tray.exe Humanizer.exe asenaizer.ico engine/cpu/llama-server.exe; do test -s "$app_dir/$f"; done
+          "$app_dir/unins000.exe" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART
+          for _ in $(seq 1 30); do [ ! -e "$app_dir/asenaizer-tray.exe" ] && break; sleep 1; done
+          test ! -e "$app_dir/asenaizer-tray.exe"
       - name: 失败时留下现场
         if: failure()
         run: |

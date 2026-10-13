@@ -39,11 +39,25 @@ if a != b:
     print("  路径不同:", a, "≠", b)
 sys.exit(0 if a == b else 1)' "$1" "$2"; }
 
+# The shipped config pins the real models' SHA-256, while the fake download source serves other
+# bytes. Data directories that download from it get a config.json with the pins cleared, so the
+# download is verified against the hash the source reports, as before pinning.
+seed_test_config() {
+  mkdir -p "$1"
+  python3 -c '
+import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+for t in c["tiers"]:
+    t["sha256"] = ""
+json.dump(c, open(sys.argv[2], "w", encoding="utf-8"))' "$APP/config/default.json" "$1/config.json"
+}
+
 "$OUT/fakehf" -addr 127.0.0.1:9182 -size 24 -rate 12 -drop-at 5 > "$W/fakehf.log" 2>&1 &
 HF=$!
 trap 'quit 47720; quit 47721; quit 47722; kill $HF ${EXT:-} 2>/dev/null || true' EXIT
 
 echo "1. 首次运行:选档 → 下载(中途断线)→ 暂停 → 续传 → 校验 → 起引擎"
+seed_test_config "$W/d1"
 "$OUT/humanizer" --data-dir "$W/d1" --engine "metal=$FAKE" --base-url http://127.0.0.1:9182 --no-browser --port 47720 --idle-exit 0 > "$W/l1.log" 2>&1 &
 L1=$!
 wait_phase 47720 setup 10 && ok "进入 setup" || bad "进入 setup"
@@ -127,6 +141,7 @@ wait_phase 47722 ready 20 && ok "新实例正常就绪" || bad "新实例正常�
 quit 47722; sleep 1
 
 echo "7. 下载到一半退出 App,重开后停在「已暂停」,点继续接着下"
+seed_test_config "$W/d3"
 "$OUT/humanizer" --data-dir "$W/d3" --engine "metal=$FAKE" --base-url http://127.0.0.1:9182 --no-browser --port 47720 --idle-exit 0 > "$W/l5.log" 2>&1 &
 wait_phase 47720 setup 10 || true
 post 47720 /app/setup '{"tier":"q6"}' >/dev/null
