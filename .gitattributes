@@ -1,0 +1,5 @@
+# Windows installer sources keep CRLF (PowerShell 5.1 and csc.exe), as in Logical Lunge
+*.ps1 text eol=crlf
+*.cs text eol=crlf
+*.exe binary
+*.ico binary

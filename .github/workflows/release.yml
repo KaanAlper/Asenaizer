@@ -1,0 +1,149 @@
+name: Release
+
+# Builds the Linux and Windows packages and publishes them as v<semver>, like Logical Lunge's
+# release workflow. The version comes from VERSION and the commits since the last tag
+# (tools/release-version.sh). These releases are never "latest": the fixed "setup" release
+# (installer.yml) stays latest so the website's setup links keep working.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      notes:
+        description: "Release notes (optional; generated notes are added)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      ver: ${{ steps.v.outputs.ver }}
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: v
+        run: |
+          ver="$(bash tools/release-version.sh '${{ inputs.bump }}')"
+          if git rev-parse -q --verify "refs/tags/v$ver" >/dev/null; then echo "v$ver already exists" >&2; exit 1; fi
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$ver"
+
+  package:
+    needs: version
+    name: package (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            runner: ubuntu-24.04
+          - target: windows
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      VER: ${{ needs.version.outputs.ver }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          cache: false
+
+      # ---- Linux: tarball read by scripts/install-linux.sh
+      - name: Install tray build dependencies
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev libxdo-dev
+      - name: Test service and tray
+        if: matrix.target == 'linux'
+        run: |
+          (cd app && go test ./...)
+          cargo test --locked --manifest-path app/tray/Cargo.toml
+      - name: Build, smoke test and package
+        if: matrix.target == 'linux'
+        run: |
+          mkdir -p app/dist/linux
+          (cd app && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VER" -o dist/linux/Humanizer .)
+          cargo build --locked --release --manifest-path app/tray/Cargo.toml
+          cp app/tray/target/release/asenaizer-tray app/dist/linux/asenaizer-tray
+          python3 app/packaging/fetch_engine.py --target linux --backend cpu --backend cuda --out app/dist/linux/engine
+          app/dist/linux/engine/cpu/llama-server --version
+          app/dist/linux/engine/cuda/llama-server --version
+          cp LICENSE NOTICE app/dist/linux/
+          mkdir -p out
+          tar -C app/dist/linux -czf "out/Asenaizer-$VER-linux-x64.tar.gz" .
+          (cd out && sha256sum "Asenaizer-$VER-linux-x64.tar.gz" > "Asenaizer-$VER-linux-x64.tar.gz.sha256")
+
+      # ---- Windows: zip read by install.ps1 and the setup exe
+      - name: Build the package
+        if: matrix.target == 'windows'
+        working-directory: app
+        run: |
+          python packaging/fetch_engine.py --target windows --out dist/engine
+          bash packaging/windows/package_asenaizer_win.sh "$VER"
+          mkdir -p ../out && cp "dist/Asenaizer-windows-x64-$VER.zip" "dist/Asenaizer-windows-x64-$VER.zip.sha256" ../out/
+      - name: Install from the package, then uninstall
+        if: matrix.target == 'windows'
+        shell: powershell
+        run: |
+          $env:ASZ_SOURCE = "$PWD\app\dist\pkg"; $env:ASZ_DEFAULTS = '1'; $env:ASZ_NO_LAUNCH = '1'
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+          $dir = "$env:LOCALAPPDATA\Programs\Asenaizer"
+          foreach ($f in 'asenaizer-tray.exe', 'Humanizer.exe', 'engine\cpu\llama-server.exe', 'uninstall.ps1') {
+            if (-not (Test-Path "$dir\$f")) { throw "missing $f after install" }
+          }
+          & "$dir\engine\cpu\llama-server.exe" --version
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$dir\uninstall.ps1" -Quiet -RemoveData
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\asenaizer-tray.exe") { throw 'uninstall left the app behind' }
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-${{ matrix.target }}
+          if-no-files-found: error
+          path: out/*
+
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        run: cd out && sha256sum *.zip *.tar.gz > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: v${{ needs.version.outputs.ver }}
+          target_commitish: ${{ needs.version.outputs.sha }}
+          name: Asenaizer v${{ needs.version.outputs.ver }}
+          body: ${{ inputs.notes }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          make_latest: "false"
+          fail_on_unmatched_files: true
+          files: out/*
