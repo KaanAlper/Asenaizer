@@ -16,7 +16,7 @@ function showTab(tab) {
   $('tab-models').classList.toggle('active', !home);
   $('tab-home').setAttribute('aria-selected', String(home));
   $('tab-models').setAttribute('aria-selected', String(!home));
-  if (home) refreshGPU();
+  if (home) refreshGPU(); else refresh();
 }
 
 async function request(path, data) {
@@ -105,6 +105,54 @@ function button(label, onClick, secondary = false, disabled = false) {
   return el;
 }
 
+// Versions are Hugging Face revisions of the model repo (main and tags). Lists load when the
+// Models tab opens; the user's pick survives the 3 s re-render.
+const versionsByTier = {};
+const chosenVersion = {};
+let modelJobs = {};
+async function loadVersions(tierId, fresh = false) {
+  try {
+    const data = await request(`/app/models/versions?tier=${encodeURIComponent(tierId)}${fresh ? '&refresh=1' : ''}`);
+    versionsByTier[tierId] = data.versions;
+  } catch (error) { versionsByTier[tierId] = { error: error.message }; }
+}
+const versionLabel = (v) => `${v.names.join(' / ')}${v.latest ? ' · latest' : ''}${v.installed ? ' · installed' : ''}`;
+function versionRow(tier) {
+  const row = el('div', 'version-row');
+  const versions = versionsByTier[tier.id];
+  const job = modelJobs[tier.id];
+  if (job && ['downloading', 'waiting', 'installing', 'hashing'].includes(job.state)) {
+    const p = job.progress;
+    const percent = p?.total ? Math.floor(p.received / p.total * 100) : 0;
+    row.append(el('span', 'version-progress', job.state === 'downloading' ? `Downloading version · ${percent}%` : job.state === 'installing' ? 'Installing version…' : 'Verifying…'));
+    return row;
+  }
+  if (!versions) { row.append(el('span', 'version-note', 'Loading versions…')); return row; }
+  if (versions.error) { row.append(el('span', 'version-note', 'Versions unavailable')); return row; }
+  const select = el('select', 'version-select');
+  select.setAttribute('aria-label', `${tier.label} version`);
+  for (const v of versions) {
+    const option = el('option', '', versionLabel(v));
+    option.value = v.revision;
+    select.append(option);
+  }
+  const installed = versions.find((v) => v.installed);
+  select.value = chosenVersion[tier.id] || installed?.revision || versions[0]?.revision || '';
+  const install = button('Install', async () => {
+    const pick = versions.find((v) => v.revision === select.value);
+    if (!pick || !confirm(`Install ${pick.names[0]} of ${tier.label}? The current file is replaced after the new one is verified.`)) return;
+    delete chosenVersion[tier.id];
+    await act('/app/models/install', { tier: tier.id, revision: pick.revision });
+  }, true, !select.value || select.value === installed?.revision);
+  select.onchange = () => {
+    chosenVersion[tier.id] = select.value;
+    install.disabled = select.value === installed?.revision;
+  };
+  row.append(el('span', 'version-note', 'Version'), select, install);
+  if (versions.length === 1 && installed) select.disabled = true;
+  return row;
+}
+
 function modelCard(tier, status) {
   const current = status.tier === tier.id;
   const busy = current && BUSY.includes(status.phase);
@@ -133,6 +181,7 @@ function modelCard(tier, status) {
     }, true, busy));
   }
   card.append(title, info, actions);
+  if (tier.downloaded) card.append(versionRow(tier));
   return card;
 }
 
@@ -163,6 +212,12 @@ async function refresh() {
     renderConnection();
     $('app-version').textContent = status.version || '—';
     $('active-model').textContent = status.tiers.find((tier) => tier.id === status.tier)?.label || 'None selected';
+    if (!$('models-panel').hidden) {
+      try { modelJobs = Object.fromEntries((await request('/app/update')).models.map((m) => [m.tier, m])); } catch { modelJobs = {}; }
+      for (const tier of status.tiers) if (tier.downloaded && !versionsByTier[tier.id]) loadVersions(tier.id).then(refresh);
+      // A finished install changes which version is installed.
+      for (const [id, job] of Object.entries(modelJobs)) if (job.state === 'done') { loadVersions(id).then(refresh); request('/app/update/model-ack', { tier: id }).catch(() => {}); }
+    }
     $('models').replaceChildren(...status.tiers.map((tier) => modelCard(tier, status)));
     renderDownload(status);
     $('unload').hidden = !['ready', 'starting'].includes(status.phase);

@@ -181,11 +181,16 @@ func (c *Config) recommendTier(ramGB float64) string {
 
 // fileURL 拼出 HF 风格下载地址:{base}/{repo}/resolve/{revision}/{file}
 func (c *Config) fileURL(base, file string) string {
+	return c.fileURLAt(base, c.Revision, file)
+}
+
+// fileURLAt is fileURL for another revision (a tag, branch or commit of the model repo).
+func (c *Config) fileURLAt(base, revision, file string) string {
 	parts := strings.Split(file, "/")
 	for i, p := range parts {
 		parts[i] = url.PathEscape(p)
 	}
-	return strings.TrimRight(base, "/") + "/" + c.Repo + "/resolve/" + url.PathEscape(c.Revision) + "/" + strings.Join(parts, "/")
+	return strings.TrimRight(base, "/") + "/" + c.Repo + "/resolve/" + url.PathEscape(revision) + "/" + strings.Join(parts, "/")
 }
 
 // Settings 是用户在网页上做的选择,持久化在数据目录的 settings.json。

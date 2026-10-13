@@ -174,6 +174,35 @@ func (u *updater) startModelDownload(id string) error {
 	if !ok {
 		return &PermanentError{Code: "bad_tier", Msg: "没有这个档位"}
 	}
+	if !fileExists(u.tierPath(t)) {
+		return &PermanentError{Code: "not_downloaded", Msg: "这个档位还没下载过,不用更新"}
+	}
+	u.mu.Lock()
+	rf, ok := u.st.Remote[t.File]
+	u.mu.Unlock()
+	if !ok || rf.Err != "" || (rf.SHA256 == "" && rf.Size <= 0) {
+		return &PermanentError{Code: "need_check", Msg: "还没查到 HF 上的新版本,请先检查更新"}
+	}
+	return u.beginModelJob(t, u.cfg.fileURL(u.models(), t.File), rf.SHA256, rf.Size)
+}
+
+// startVersionDownload installs the tier's file from one Hugging Face revision (a tag or
+// branch), newer or older than the installed one. It reuses the update path, so the file is
+// verified against sha256, swapped in, and rolled back if the engine cannot load it.
+func (u *updater) startVersionDownload(id, revision, sha string, size int64) error {
+	t, ok := u.cfg.tier(id)
+	if !ok {
+		return &PermanentError{Code: "bad_tier", Msg: "unknown model"}
+	}
+	if revision == "" || !sha256Re.MatchString(sha) {
+		return &PermanentError{Code: "bad_version", Msg: "this version has no verified sha256"}
+	}
+	return u.beginModelJob(t, u.cfg.fileURLAt(u.models(), revision, t.File), sha, size)
+}
+
+// beginModelJob downloads url next to the tier's file and swaps it in once verified.
+func (u *updater) beginModelJob(t Tier, fileURL, sha string, size int64) error {
+	id := t.ID
 	cur := u.tierPath(t)
 	if !fileExists(cur) {
 		return &PermanentError{Code: "not_downloaded", Msg: "这个档位还没下载过,不用更新"}
@@ -189,22 +218,18 @@ func (u *updater) startModelDownload(id string) error {
 			return &PermanentError{Code: "busy", Msg: "另一个模型正在更新,等它完成再来"}
 		}
 	}
-	rf, ok := u.st.Remote[t.File]
 	var prev chan struct{}
 	if j := u.mjobs[id]; j != nil {
 		prev = j.fetchDone
 	}
 	u.mu.Unlock()
-	if !ok || rf.Err != "" || (rf.SHA256 == "" && rf.Size <= 0) {
-		return &PermanentError{Code: "need_check", Msg: "还没查到 HF 上的新版本,请先检查更新"}
-	}
 	waitFetchDone(prev)
 	ctx, cancel := context.WithCancel(u.rootCtx)
 	d := &Download{
-		URL:        u.cfg.fileURL(u.models(), t.File),
+		URL:        fileURL,
 		Dest:       cur + ".update",
-		SHA256:     rf.SHA256,
-		ExpectSize: rf.Size,
+		SHA256:     sha,
+		ExpectSize: size,
 		UserAgent:  u.ua,
 		Client:     u.client,
 		Logf:       u.logf,

@@ -29,6 +29,7 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("GET /app/gpu", a.handleGPU)
 	a.registerPairingRoutes(mux)
 	mux.HandleFunc("POST /app/model/unload", a.handleUnload)
+	a.registerVersionRoutes(mux)
 	mux.HandleFunc("GET /app/config", a.handleConfig)
 	mux.HandleFunc("POST /app/setup", a.handleSetup)
 	mux.HandleFunc("POST /app/model/delete", a.handleModelDelete)

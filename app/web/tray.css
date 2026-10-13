@@ -21,6 +21,8 @@
   --track: #2a241e;
   --overlay-glow: #2c2140;
   --shadow: 0 1px 3px rgb(0 0 0 / .35);
+  --tabs-bg: var(--surface);
+  --tab-active: var(--surface-2);
   --radius: 12px;
   font-family: Inter, system-ui, sans-serif;
   color: var(--text);
@@ -48,6 +50,8 @@
   --track: #e9e5dc;
   --overlay-glow: #e7e0ff;
   --shadow: 0 1px 3px rgb(22 20 27 / .1);
+  --tabs-bg: var(--surface-2);
+  --tab-active: var(--surface);
 }
 * { box-sizing: border-box; }
 /* Elements given a display value below must still disappear when hidden. */
@@ -76,10 +80,10 @@ header { display: flex; align-items: center; gap: 10px; padding-bottom: 14px; cu
 .close:hover { background: var(--bad); border-color: var(--bad); color: var(--bad-ink); }
 .round:active { transform: scale(.92); }
 
-.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 10px; background: var(--tabs-bg); border: 1px solid var(--line); }
 .tab { border: 0; border-radius: 7px; background: none; color: var(--text-2); padding: 7px 0; font: 600 12px system-ui; cursor: pointer; transition: background .15s, color .15s; }
 .tab:hover { color: var(--text); }
-.tab.active { background: var(--surface-2); color: var(--text); box-shadow: var(--shadow); }
+.tab.active { background: var(--tab-active); color: var(--text); box-shadow: var(--shadow); }
 
 .panel { flex: 1; min-height: 0; overflow-y: auto; padding-top: 16px; scrollbar-width: thin; }
 
@@ -192,9 +196,9 @@ progress { display: block; width: 100%; height: 6px; margin: 10px 0 7px; accent-
 .group-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .group-head .label { margin: 0 2px; }
 .group-note { margin: 7px 2px 0; color: var(--text-3); font-size: 10.5px; line-height: 1.5; }
-.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 10px; background: var(--tabs-bg); border: 1px solid var(--line); }
 .segmented button { border: 0; border-radius: 7px; background: none; color: var(--text-2); padding: 7px 0; font: 600 12px system-ui; font-family: inherit; cursor: pointer; }
-.segmented button[aria-checked="true"] { background: var(--surface-2); color: var(--text); box-shadow: var(--shadow); }
+.segmented button[aria-checked="true"] { background: var(--tab-active); color: var(--text); box-shadow: var(--shadow); }
 .btn.wide { width: 100%; margin-top: 10px; padding: 8px 10px; }
 .pair-open { width: min(100%, 300px); margin: 0 0 12px; }
 .hero-site-only .site-link { font-size: 12.5px; }
@@ -211,3 +215,8 @@ progress { display: block; width: 100%; height: 6px; margin: 10px 0 7px; accent-
 .btn.danger { color: var(--bad); }
 #browser-list .state-on { color: var(--ok); }
 #browser-list .state-paused { color: var(--warn); }
+.version-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.version-note { color: var(--text-3); font-size: 11px; }
+.version-progress { color: var(--accent); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.version-select { flex: 1; min-width: 0; padding: 5px 7px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-2); color: var(--text); font: 600 11px system-ui; font-family: inherit; }
+.version-select:disabled { opacity: .7; }
