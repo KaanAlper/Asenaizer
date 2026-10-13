@@ -55,6 +55,47 @@ func (a *App) registerBridgeRoutes(mux *http.ServeMux) {
 // bridgeOpen lists the bridge paths that work without a paired key.
 var bridgeOpen = map[string]bool{"/bridge/ping": true, "/bridge/pair": true}
 
+// corsWriter writes the bridge's CORS headers last, replacing any that a proxied
+// llama-server response added. Browsers reject a response with two
+// Access-Control-Allow-Origin headers, which Firefox reports as a NetworkError.
+type corsWriter struct {
+	http.ResponseWriter
+	origin string
+	wrote  bool
+}
+
+func setBridgeCORS(h http.Header, origin string) {
+	for k := range h {
+		if strings.HasPrefix(k, "Access-Control-") {
+			delete(h, k)
+		}
+	}
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Vary", "Origin")
+	h.Set("Access-Control-Allow-Private-Network", "true")
+	h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	h.Set("Access-Control-Max-Age", "600")
+}
+
+func (c *corsWriter) WriteHeader(code int) {
+	if !c.wrote {
+		c.wrote = true
+		setBridgeCORS(c.Header(), c.origin)
+	}
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func (c *corsWriter) Write(b []byte) (int, error) {
+	if !c.wrote {
+		c.WriteHeader(http.StatusOK)
+	}
+	return c.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController flush streamed tokens through this writer.
+func (c *corsWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
+
 func (a *App) bridgeGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -62,12 +103,8 @@ func (a *App) bridgeGuard(next http.Handler) http.Handler {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}
-		w.Header().Set("Access-Control-Allow-Origin", a.webOrigin)
-		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Private-Network", "true")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Max-Age", "600")
+		w = &corsWriter{ResponseWriter: w, origin: a.webOrigin}
+		setBridgeCORS(w.Header(), a.webOrigin)
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

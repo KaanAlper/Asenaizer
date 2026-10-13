@@ -3,6 +3,7 @@ package launcher
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -96,5 +97,34 @@ func TestDeleteOnlyInactiveConfiguredModel(t *testing.T) {
 	resp, result := bridgeRequest(t, base, "POST", "/bridge/model/delete", a.webOrigin, key, `{"tier":"q6"}`)
 	if resp.StatusCode != 200 || result["deleted"] != "q6" || fileExists(path) {
 		t.Fatalf("inactive deletion: %d %v", resp.StatusCode, result)
+	}
+}
+
+// A proxied llama-server response carries its own CORS headers. The bridge must
+// send exactly one Access-Control-Allow-Origin or the browser drops the response.
+func TestBridgeReplacesUpstreamCORSAndKeepsStreaming(t *testing.T) {
+	a := &App{cfg: testConfig(t), dataDir: t.TempDir(), webOrigin: "https://kaanalper.github.io"}
+	key := pairTestBrowser(t, a)
+	flushed := false
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "")
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {}\n\n"))
+		flushed = http.NewResponseController(w).Flush() == nil
+	})
+	srv := httptest.NewServer(a.bridgeGuard(upstream))
+	defer srv.Close()
+	resp, _ := bridgeRequest(t, srv.URL, "POST", "/bridge/completion", a.webOrigin, key, `{}`)
+	if got := resp.Header.Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != a.webOrigin {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want exactly [%q]", got, a.webOrigin)
+	}
+	if resp.Header.Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatal("upstream CORS headers must not leak through")
+	}
+	if !flushed {
+		t.Fatal("streamed tokens must still be flushable through the bridge")
 	}
 }
