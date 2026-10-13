@@ -13,7 +13,7 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use wry::WebViewBuilder;
+use wry::{WebContext, WebViewBuilder};
 
 const SITE: &str = "https://kaanalper.github.io/Asenaizer/";
 const FALLBACK_PORT: u16 = 47615;
@@ -108,6 +108,22 @@ fn set_shown(window: &tao::window::Window, view: Option<&wry::WebView>, shown: b
     }
 }
 
+/// A pairing code as the Go service issues it: six characters from an alphabet without
+/// look-alikes (internal/launcher/pairing.go).
+fn is_pair_code(code: &str) -> bool {
+    const ALPHABET: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    code.len() == 6 && code.chars().all(|c| ALPHABET.contains(c))
+}
+
+/// Opens the website with the code in the URL fragment so the site can fill in the code box.
+/// The fragment never reaches GitHub Pages. Anything but a valid code is ignored, so the page
+/// cannot make the tray open arbitrary URLs.
+fn open_site_with_code(code: &str) {
+    if is_pair_code(code) {
+        open_url(&format!("{SITE}#pair={code}"));
+    }
+}
+
 fn icon() -> Icon {
     let mut rgba = vec![0_u8; 32 * 32 * 4];
     for y in 0..32 { for x in 0..32 {
@@ -149,8 +165,10 @@ fn main() {
     let builder = { use tao::platform::windows::WindowBuilderExtWindows; builder.with_skip_taskbar(true) };
     let settings_window = builder.build(&event_loop).ok();
     let ipc_proxy = event_loop.create_proxy();
+    // A persistent profile keeps the page's own settings, such as the theme, across restarts.
+    let web_context: &'static mut WebContext = Box::leak(Box::new(WebContext::new(Some(data_dir().join("tray-webview")))));
     let settings_view = settings_window.as_ref().and_then(|window| {
-        let builder = WebViewBuilder::new()
+        let builder = WebViewBuilder::new_with_web_context(web_context)
             .with_url(format!("http://127.0.0.1:{}/tray.html", port()))
             .with_initialization_script(format!("window.asenaizerTrayShown = {show_settings};"))
             .with_ipc_handler(move |req| { let _ = ipc_proxy.send_event(UserEvent::Ipc(req.body().clone())); })
@@ -211,8 +229,11 @@ fn main() {
                 if let Some(window) = settings_window.as_ref() {
                     match message.as_str() {
                         "hide" => set_shown(window, settings_view.as_ref(), false),
+                        "open-site" => open_url(SITE),
                         "drag" => { let _ = window.drag_window(); }
-                        _ => {}
+                        other => {
+                            if let Some(code) = other.strip_prefix("pair:") { open_site_with_code(code); }
+                        }
                     }
                 }
             }
@@ -227,4 +248,22 @@ fn main() {
             _ => {}
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_pair_code;
+
+    #[test]
+    fn accepts_issued_pairing_codes() {
+        assert!(is_pair_code("RK383P"));
+        assert!(is_pair_code("V4M46F"));
+    }
+
+    #[test]
+    fn rejects_anything_that_could_change_the_url() {
+        for code in ["", "ABC12", "ABC1234", "ABCDE0", "ABCDEI", "abcdef", "ABC/12", "AB#=12", "AB&x=1"] {
+            assert!(!is_pair_code(code), "{code:?} should be rejected");
+        }
+    }
 }

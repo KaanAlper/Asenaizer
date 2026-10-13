@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Asenaizer</title>
+  <script src="tray-theme.js"></script>
   <link rel="stylesheet" href="tray.css">
   <script type="module" src="tray.js"></script>
 </head>
@@ -12,53 +13,102 @@
     <header id="titlebar">
       <span class="mark" aria-hidden="true">✳</span>
       <div class="brand"><strong>asenaizer</strong><span id="state-pill" class="pill" data-tone="idle"><i></i><span id="state-text">Checking</span></span></div>
-      <button id="hide" class="close" type="button" title="Hide to tray (Esc)" aria-label="Hide to tray">
+      <button id="settings-open" class="round" type="button" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="settings-panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button id="hide" class="round close" type="button" title="Hide to tray (Esc)" aria-label="Hide to tray">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
       </button>
     </header>
 
-    <nav class="tabs" role="tablist" aria-label="Device sections">
-      <button class="tab active" id="tab-home" role="tab" type="button" aria-selected="true" aria-controls="home-panel">Device</button>
-      <button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models-panel">Models</button>
-    </nav>
+    <div id="main-view" class="view">
+      <nav class="tabs" role="tablist" aria-label="Device sections">
+        <button class="tab active" id="tab-home" role="tab" type="button" aria-selected="true" aria-controls="home-panel">Device</button>
+        <button class="tab" id="tab-models" role="tab" type="button" aria-selected="false" aria-controls="models-panel">Models</button>
+      </nav>
 
-    <section id="home-panel" class="panel" role="tabpanel" aria-labelledby="tab-home">
-      <div class="hero">
-        <h1 id="home-title">Starting…</h1>
-        <p id="home-description">Open the website, then select <b>Connect this device</b> to pair this computer.</p>
-        <div class="hero-actions">
-          <button id="pair-start" class="site-button" type="button">Connect a browser <span aria-hidden="true">→</span></button>
-          <a class="site-link" href="https://kaanalper.github.io/Asenaizer/" target="_blank" rel="noopener noreferrer">Open website ↗</a>
+      <section id="home-panel" class="panel" role="tabpanel" aria-labelledby="tab-home">
+        <div class="hero">
+          <h1 id="home-title">Starting…</h1>
+          <p id="home-description"></p>
+          <div class="hero-actions">
+            <button id="hero-action" class="site-button" type="button" hidden>Connect a browser <span aria-hidden="true">→</span></button>
+            <button id="hero-site" class="site-link" type="button" hidden>Open website ↗</button>
+          </div>
         </div>
-      </div>
 
-      <button id="unload" class="btn secondary unload" type="button" hidden>Unload model from GPU</button>
-      <div id="gpu-list">
-        <article class="gpu"><p class="label">Graphics</p><strong class="gpu-name">Detecting…</strong></article>
-      </div>
+        <button id="unload" class="btn secondary unload" type="button" hidden>Unload model from GPU</button>
+        <div id="gpu-list">
+          <article class="gpu"><p class="label">Graphics</p><strong class="gpu-name">Detecting…</strong></article>
+        </div>
 
-      <dl class="detail-list">
-        <div><dt>Active model</dt><dd id="active-model">None</dd></div>
-        <div><dt>Engine memory</dt><dd id="engine-ram">—</dd></div>
-        <div><dt>Local address</dt><dd id="service-port">127.0.0.1</dd></div>
-      </dl>
-      <section class="browsers" aria-labelledby="browsers-title">
-        <h2 id="browsers-title" class="label">Paired browsers</h2>
-        <ul id="browser-list"></ul>
+        <dl class="detail-list">
+          <div><dt>Active model</dt><dd id="active-model">None</dd></div>
+          <div><dt>Engine memory</dt><dd id="engine-ram">—</dd></div>
+        </dl>
+        <p class="home-note">Your model and drafts stay on this computer.</p>
       </section>
-      <p class="home-note">Your model and drafts stay on this computer.</p>
-    </section>
 
-    <section id="models-panel" class="panel" role="tabpanel" aria-labelledby="tab-models" hidden>
-      <div class="section-heading"><h1>Models on this device</h1><p>Download once, then rewrite on your own GPU.</p></div>
-      <div id="download" hidden>
-        <div class="progress-head"><strong id="download-label">Downloading model</strong><span id="download-percent">0%</span></div>
-        <progress id="progress" max="100" value="0"></progress>
-        <div class="progress-detail"><span id="download-bytes"></span><span id="download-speed"></span></div>
-        <button id="pause-download" class="btn secondary" type="button">Pause download</button>
+      <section id="models-panel" class="panel" role="tabpanel" aria-labelledby="tab-models" hidden>
+        <div class="section-heading"><h1>Models on this device</h1><p>Download once, then rewrite on your own GPU.</p></div>
+        <div id="download" hidden>
+          <div class="progress-head"><strong id="download-label">Downloading model</strong><span id="download-percent">0%</span></div>
+          <progress id="progress" max="100" value="0"></progress>
+          <div class="progress-detail"><span id="download-bytes"></span><span id="download-speed"></span></div>
+          <button id="pause-download" class="btn secondary" type="button">Pause download</button>
+        </div>
+        <p id="model-error" class="error" role="alert" hidden></p>
+        <div id="models"></div>
+      </section>
+    </div>
+
+    <section id="settings-panel" class="view panel settings" aria-labelledby="settings-title" hidden>
+      <div class="settings-head">
+        <button id="settings-back" class="round" type="button" aria-label="Back">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <h1 id="settings-title">Settings</h1>
       </div>
-      <p id="model-error" class="error" role="alert" hidden></p>
-      <div id="models"></div>
+
+      <section class="settings-group" aria-labelledby="connection-title">
+        <h2 id="connection-title" class="label">Connection</h2>
+        <div class="conn-card">
+          <span id="conn-dot" class="conn-dot" aria-hidden="true"></span>
+          <div class="conn-text"><strong id="conn-title">Not connected</strong><span id="conn-detail"></span></div>
+        </div>
+        <div class="conn-actions">
+          <button id="conn-reconnect" class="btn" type="button">Reconnect</button>
+          <button id="conn-disconnect" class="btn secondary danger" type="button">Disconnect</button>
+        </div>
+      </section>
+
+      <section class="settings-group" aria-labelledby="browsers-title">
+        <div class="group-head">
+          <h2 id="browsers-title" class="label">Paired browsers</h2>
+          <button id="pair-start" class="btn" type="button">Connect a browser</button>
+        </div>
+        <ul id="browser-list"></ul>
+        <p class="group-note">A paired browser reconnects on its own. Remove it to require a new code.</p>
+      </section>
+
+      <section class="settings-group" aria-labelledby="theme-title">
+        <h2 id="theme-title" class="label">Appearance</h2>
+        <div class="segmented" role="radiogroup" aria-labelledby="theme-title">
+          <button type="button" role="radio" data-theme-choice="system">System</button>
+          <button type="button" role="radio" data-theme-choice="light">Light</button>
+          <button type="button" role="radio" data-theme-choice="dark">Dark</button>
+        </div>
+      </section>
+
+      <section class="settings-group" aria-labelledby="about-title">
+        <h2 id="about-title" class="label">About</h2>
+        <dl class="detail-list">
+          <div><dt>Local address</dt><dd id="service-port">127.0.0.1</dd></div>
+          <div><dt>Device name</dt><dd id="device-name">—</dd></div>
+          <div><dt>Version</dt><dd id="app-version">—</dd></div>
+        </dl>
+        <button class="btn secondary wide" type="button" data-open-site>Open Asenaizer website ↗</button>
+      </section>
     </section>
   </main>
 
@@ -68,7 +118,8 @@
       <p class="label">Waiting for connection</p>
       <h2 id="pair-title">Enter this code on the website</h2>
       <p class="pair-code" id="pair-code" aria-live="polite">––– –––</p>
-      <p class="pair-hint">Open <b>kaanalper.github.io/Asenaizer</b> in a browser on this computer, select <b>Connect a device</b> and type the code.</p>
+      <button id="pair-open-site" class="site-button pair-open" type="button">Open website with this code <span aria-hidden="true">↗</span></button>
+      <p class="pair-hint">The code is filled in for you. Select <b>Connect</b> on the website to finish.</p>
       <p class="pair-expiry" id="pair-expiry"></p>
       <div class="pair-actions">
         <button id="pair-new" class="btn secondary" type="button">New code</button>

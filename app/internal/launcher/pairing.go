@@ -43,6 +43,9 @@ type pairedBrowser struct {
 	KeyHash  string    `json:"key_hash"`
 	Created  time.Time `json:"created"`
 	LastSeen time.Time `json:"last_seen"`
+	// Paused browsers stay paired but are refused until they reconnect. The tray's
+	// Disconnect sets it; the website's Reconnect or the tray's Reconnect clears it.
+	Paused bool `json:"paused,omitempty"`
 }
 
 type pendingCode struct {
@@ -209,6 +212,24 @@ func (s *pairingStore) authenticate(key string, now time.Time) (pairedBrowser, b
 	return pairedBrowser{}, false
 }
 
+// setPaused pauses or resumes one browser, or every browser when id is empty.
+// It reports how many browsers changed.
+func (s *pairingStore) setPaused(id string, paused bool, now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := 0
+	for i := range s.browsers {
+		if (id == "" || s.browsers[i].ID == id) && s.browsers[i].Paused != paused {
+			s.browsers[i].Paused = paused
+			changed++
+		}
+	}
+	if changed > 0 {
+		_ = s.saveLocked(now)
+	}
+	return changed
+}
+
 func (s *pairingStore) list() []pairedBrowser {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -269,9 +290,22 @@ func (a *App) registerPairingRoutes(mux *http.ServeMux) {
 		list := a.pairing().list()
 		out := make([]map[string]any, 0, len(list))
 		for _, b := range list {
-			out = append(out, map[string]any{"id": b.ID, "name": b.Name, "created": b.Created, "last_seen": b.LastSeen})
+			out = append(out, map[string]any{"id": b.ID, "name": b.Name, "created": b.Created, "last_seen": b.LastSeen, "paused": b.Paused})
 		}
 		writeJSON(w, 200, map[string]any{"browsers": out})
+	})
+	// Disconnect stops the website from using this computer without forgetting the browser.
+	mux.HandleFunc("POST /app/pairings/disconnect", func(w http.ResponseWriter, r *http.Request) {
+		id := pairingID(w, r)
+		n := a.pairing().setPaused(id, true, time.Now())
+		a.lastBridge.Store(0)
+		if a.inflight.Load() == 0 {
+			a.unloadEngine("disconnected from the tray")
+		}
+		writeJSON(w, 200, map[string]any{"paused": n})
+	})
+	mux.HandleFunc("POST /app/pairings/resume", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"resumed": a.pairing().setPaused(pairingID(w, r), false, time.Now())})
 	})
 	mux.HandleFunc("POST /app/pairings/remove", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -287,4 +321,13 @@ func (a *App) registerPairingRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"removed": req.ID})
 	})
+}
+
+// pairingID reads an optional {"id": "..."} body; an empty id means every browser.
+func pairingID(w http.ResponseWriter, r *http.Request) string {
+	var req struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req)
+	return req.ID
 }

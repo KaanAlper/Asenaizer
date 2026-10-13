@@ -38,6 +38,7 @@ async function api(path, method = 'GET', body, signal) {
   if (!response.ok) {
     const error = new Error(data.error?.message || data.error || `HTTP ${response.status}`);
     error.status = response.status;
+    error.code = data.error?.code;
     throw error;
   }
   return data;
@@ -191,7 +192,12 @@ async function refresh() {
     if (state.config.instr + '\n\nX' + state.config.sep !== state.config.probe) throw new Error('Model prompt format mismatch');
   } catch (error) {
     state.status = null;
-    if (error.status === 401) {
+    if (error.status === 403 && error.code === 'disconnected') {
+      // The device's tray chose Disconnect. Stay paired; Reconnect asks the device to resume.
+      state.paused = true;
+      state.disconnectedByDevice = true;
+      message('connect-message', `${state.device || 'The device'} disconnected this browser. Select Reconnect to use it again.`);
+    } else if (error.status === 401) {
       forgetLocally();
       message('connect-message', 'This browser was removed from the device. Enter a new code from the app.', 'error');
     } else {
@@ -304,6 +310,10 @@ $('pair-form').onsubmit = async (event) => {
   } finally { $('connect').disabled = false; }
 };
 $('reconnect').onclick = async () => {
+  if (state.disconnectedByDevice) {
+    try { await api('/bridge/resume', 'POST', {}); state.disconnectedByDevice = false; }
+    catch (error) { message('connect-message', error.message, 'error'); return; }
+  }
   state.paused = false;
   message('connect-message', `Connecting to ${state.device}…`);
   await refresh();
@@ -424,7 +434,25 @@ $('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(state.currentResult); message('rewrite-message', 'Copied.', 'good'); }
   catch { message('rewrite-message', 'Could not copy the result.', 'error'); }
 };
-if (state.token) {
+// The tray's "Open website" button passes its code in the URL fragment. The code is only
+// typed into the box; connecting stays the user's choice. The fragment is removed at once.
+function prefillPairCode() {
+  const match = location.hash.match(/^#pair=([A-Za-z0-9]{6})$/);
+  if (!match) return false;
+  history.replaceState(null, '', location.pathname + location.search);
+  const code = normalizeCode(match[1]);
+  if (code.length !== 6) return false;
+  state.paused = !!state.token;
+  state.pairingOther = !!state.token;
+  $('pair-code').value = `${code.slice(0, 3)}-${code.slice(3)}`;
+  render();
+  message('connect-message', 'Code filled in from the Asenaizer app. Select Connect to pair this browser.', 'good');
+  $('connect').focus();
+  return true;
+}
+if (prefillPairCode()) {
+  // Waiting for the user to select Connect.
+} else if (state.token) {
   message('connect-message', `Reconnecting to ${state.device || 'your device'}…`);
   findDevice().then((port) => { if (port) state.port = port; refresh(); });
 }

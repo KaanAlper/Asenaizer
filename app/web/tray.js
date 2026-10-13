@@ -39,22 +39,60 @@ async function act(path, data) {
   await refresh();
 }
 
-function setState(tone, label, title) {
+function setPill(tone, label) {
   $('state-pill').dataset.tone = tone;
   $('state-text').textContent = label;
-  $('home-title').textContent = title;
 }
 
-function describePhase(status) {
-  switch (status.phase) {
-    case 'ready': return ['ok', 'Ready', 'Ready to connect.'];
-    case 'starting': return ['warn', 'Starting', 'Loading the model…'];
-    case 'downloading': return ['warn', 'Downloading', 'Downloading the model…'];
-    case 'paused': return ['idle', 'Paused', 'Download paused.'];
-    case 'error': return ['bad', 'Error', 'Something needs attention.'];
-    case 'stopped': return ['idle', 'Standby', status.tier ? 'Ready to connect.' : 'Choose a model to start.'];
-    default: return ['idle', 'No model', 'Choose a model to start.'];
+// A browser counts as connected while it polls the bridge (every 3 s) and is not paused.
+const SITE_GONE_MS = 90_000;
+let browsers = [];
+const isConnected = (b) => !b.paused && Date.now() - new Date(b.last_seen).getTime() < SITE_GONE_MS;
+const connectedBrowser = () => browsers.find(isConnected) || null;
+
+function openSite(code) {
+  if (window.ipc) ipc(code ? `pair:${code}` : 'open-site');
+  else window.open(`https://kaanalper.github.io/Asenaizer/${code ? `#pair=${code}` : ''}`, '_blank', 'noopener');
+}
+
+function setHeroActions(primary, secondary) {
+  $('hero-action').hidden = !primary;
+  if (primary) { $('hero-action').firstChild.textContent = `${primary.label} `; $('hero-action').onclick = primary.run; }
+  $('hero-site').hidden = !secondary;
+  if (secondary) { $('hero-site').textContent = secondary.label; $('hero-site').onclick = secondary.run; }
+}
+
+// The home screen leads with the connection: what the user has to do next, or who is connected.
+function renderHome(status) {
+  const active = connectedBrowser();
+  const paused = browsers.length > 0 && browsers.every((b) => b.paused);
+  const modelLine = status.phase === 'ready' ? 'The model is loaded on the GPU.'
+    : status.phase === 'starting' ? 'Loading the model…'
+    : status.phase === 'downloading' ? 'Downloading the model…'
+    : status.phase === 'error' ? 'The model needs attention. See Models.'
+    : status.tier ? 'The model loads on the next rewrite.' : 'Choose a model in Models.';
+  const openSiteAction = { label: 'Open website ↗', run: () => openSite() };
+  if (active) {
+    $('home-title').textContent = 'Connected';
+    $('home-description').textContent = `${active.name} is using this computer. ${modelLine}`;
+    setHeroActions(null, openSiteAction);
+  } else if (!browsers.length) {
+    $('home-title').textContent = 'Not connected';
+    $('home-description').textContent = 'Connect a browser to rewrite with this computer\'s GPU.';
+    setHeroActions({ label: 'Connect a browser', run: startPairing }, null);
+  } else if (paused) {
+    $('home-title').textContent = 'Disconnected';
+    $('home-description').textContent = 'You disconnected the website. Reconnect when you need it.';
+    setHeroActions({ label: 'Reconnect', run: reconnect }, null);
+  } else {
+    $('home-title').textContent = 'Not connected';
+    $('home-description').textContent = 'Open the website on a paired browser and it reconnects on its own.';
+    setHeroActions({ label: 'Open website', run: () => openSite() }, { label: 'Connect a browser', run: startPairing });
   }
+  if (status.phase === 'error') setPill('bad', 'Error');
+  else if (status.phase === 'downloading') setPill('warn', 'Downloading');
+  else if (active) setPill('ok', 'Connected');
+  else setPill('idle', 'Not connected');
 }
 
 function button(label, onClick, secondary = false, disabled = false) {
@@ -119,18 +157,20 @@ function renderDownload(status) {
 async function refresh() {
   if (!shown) return;
   try {
-    const status = await request('/app/status');
-    setState(...describePhase(status));
-    $('home-description').innerHTML = status.phase === 'ready'
-      ? 'The model is loaded for the connected website. It is unloaded when the site closes.'
-      : 'Select <b>Connect a browser</b> and type the code on the website. The model loads only while the site is connected.';
+    const [status, pairings] = await Promise.all([request('/app/status'), request('/app/pairings')]);
+    browsers = pairings.browsers;
+    renderHome(status);
+    renderConnection();
+    $('app-version').textContent = status.version || '—';
     $('active-model').textContent = status.tiers.find((tier) => tier.id === status.tier)?.label || 'None selected';
     $('models').replaceChildren(...status.tiers.map((tier) => modelCard(tier, status)));
     renderDownload(status);
     $('unload').hidden = !['ready', 'starting'].includes(status.phase);
   } catch (error) {
-    setState('bad', 'Offline', 'Service offline.');
+    setPill('bad', 'Offline');
+    $('home-title').textContent = 'Service offline';
     $('home-description').textContent = `Cannot reach the local service: ${error.message}`;
+    setHeroActions(null, null);
   }
 }
 
@@ -224,7 +264,7 @@ function showGPUMessage(text) {
 let shown = window.asenaizerTrayShown ?? true;
 window.asenaizerTrayVisible = (visible) => {
   shown = visible;
-  if (visible) { refresh(); refreshGPU(); refreshBrowsers(); }
+  if (visible) { refresh(); refreshGPU(); }
 };
 
 async function refreshGPU() {
@@ -272,6 +312,7 @@ $('hide').onclick = () => ipc('hide');
 
 // Pairing: the tray shows a short code that the website types in. Polls until a browser pairs.
 let pairTimer = null;
+let currentCode = '';
 function closePairing() {
   clearInterval(pairTimer); pairTimer = null;
   $('pair-overlay').hidden = true;
@@ -284,12 +325,13 @@ async function pollPairing() {
     clearInterval(pairTimer); pairTimer = null;
     $('pair-waiting').hidden = true; $('pair-done').hidden = false;
     $('pair-done-name').textContent = st.paired.name;
-    refreshBrowsers();
+    refresh();
     setTimeout(closePairing, 2200);
     return;
   }
   if (!st.code) { $('pair-code').textContent = formatCode(''); $('pair-expiry').textContent = 'The code expired.'; return; }
   $('pair-code').textContent = formatCode(st.code);
+  currentCode = st.code;
   const minutes = Math.floor(st.expires_in / 60), seconds = String(st.expires_in % 60).padStart(2, '0');
   $('pair-expiry').textContent = `Expires in ${minutes}:${seconds}`;
 }
@@ -302,6 +344,7 @@ async function startPairing() {
   pairTimer = setInterval(pollPairing, 1000);
 }
 $('pair-start').onclick = startPairing;
+$('pair-open-site').onclick = () => { if (currentCode) openSite(currentCode); };
 $('pair-new').onclick = startPairing;
 $('pair-cancel').onclick = async () => { closePairing(); try { await request('/app/pair/cancel', {}); } catch { /* the code expires anyway */ } };
 
@@ -312,24 +355,70 @@ function ago(iso) {
   if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
   return `${Math.round(seconds / 86400)} d ago`;
 }
-async function refreshBrowsers() {
-  if (!shown) return;
-  let data;
-  try { data = await request('/app/pairings'); } catch { return; }
-  const items = data.browsers.map((browser) => {
+async function reconnect() {
+  try { await request('/app/pairings/resume', {}); } catch { /* the site still reconnects from its own button */ }
+  openSite();
+  refresh();
+}
+async function disconnect() {
+  try { await request('/app/pairings/disconnect', {}); } catch (error) { $('conn-detail').textContent = error.message; }
+  await refresh();
+  refreshGPU();
+}
+$('conn-reconnect').onclick = reconnect;
+$('conn-disconnect').onclick = disconnect;
+
+// Settings: connection state, paired browsers and their state.
+function renderConnection() {
+  const active = connectedBrowser();
+  const paused = browsers.length > 0 && browsers.every((b) => b.paused);
+  const card = $('conn-dot').parentElement;
+  card.dataset.state = active ? 'connected' : paused ? 'paused' : 'idle';
+  $('conn-title').textContent = active ? 'Connected' : paused ? 'Disconnected' : 'Not connected';
+  $('conn-detail').textContent = active ? `${active.name} · using this computer`
+    : paused ? 'The website is blocked until you reconnect.'
+    : browsers.length ? 'No paired browser has the website open.' : 'No browser paired yet.';
+  $('conn-disconnect').hidden = !active;
+  $('conn-reconnect').hidden = !browsers.length || !!active;
+  const items = browsers.map((browser) => {
     const li = el('li');
     const who = el('div', 'who');
-    who.append(el('strong', '', browser.name), el('span', '', `Last used ${ago(browser.last_seen)}`));
+    const state = isConnected(browser) ? el('span', 'state-on', 'Connected now')
+      : browser.paused ? el('span', 'state-paused', 'Disconnected')
+      : el('span', '', `Last used ${ago(browser.last_seen)}`);
+    who.append(el('strong', '', browser.name), state);
     li.append(who, button('Remove', async () => {
       if (!confirm(`Remove ${browser.name}? It will need a new code to connect again.`)) return;
-      try { await request('/app/pairings/remove', { id: browser.id }); } catch { /* list refresh shows the state */ }
-      refreshBrowsers();
+      try { await request('/app/pairings/remove', { id: browser.id }); } catch { /* the next refresh shows the state */ }
+      refresh();
     }, true));
     return li;
   });
   if (!items.length) items.push(el('li', 'empty', 'No browser paired yet'));
   $('browser-list').replaceChildren(...items);
 }
+
+function showSettings(open) {
+  $('main-view').hidden = open;
+  $('settings-panel').hidden = !open;
+  $('settings-open').setAttribute('aria-expanded', String(open));
+  if (open) refresh();
+}
+$('settings-open').onclick = () => showSettings($('settings-panel').hidden);
+$('settings-back').onclick = () => showSettings(false);
+
+function renderThemeChoice() {
+  const choice = document.documentElement.dataset.themeChoice || 'system';
+  for (const option of document.querySelectorAll('[data-theme-choice]')) {
+    option.setAttribute('aria-checked', String(option.dataset.themeChoice === choice));
+  }
+}
+for (const option of document.querySelectorAll('[data-theme-choice]')) {
+  option.onclick = () => { window.asenaizerSetTheme?.(option.dataset.themeChoice); renderThemeChoice(); };
+}
+renderThemeChoice();
+for (const link of document.querySelectorAll('[data-open-site]')) link.onclick = () => openSite();
+
 $('unload').onclick = async () => {
   $('unload').disabled = true;
   try { await request('/app/model/unload', {}); }
@@ -340,7 +429,9 @@ $('unload').onclick = async () => {
 };
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
-  if (!$('pair-overlay').hidden) $('pair-cancel').click(); else ipc('hide');
+  if (!$('pair-overlay').hidden) $('pair-cancel').click();
+  else if (!$('settings-panel').hidden) showSettings(false);
+  else ipc('hide');
 });
 $('titlebar').addEventListener('mousedown', (event) => {
   if (event.button === 0 && !event.target.closest('button')) ipc('drag');
@@ -348,8 +439,8 @@ $('titlebar').addEventListener('mousedown', (event) => {
 $('service-port').textContent = `127.0.0.1:${location.port}`;
 
 showTab(location.hash === '#models' ? 'models' : 'home');
+if (location.hash === '#settings') showSettings(true);
 refresh();
-refreshBrowsers();
-setInterval(refreshBrowsers, 30000);
+request('/app/pair/state').then((st) => { $('device-name').textContent = st.device || '—'; }).catch(() => {});
 setInterval(refresh, STATUS_POLL_MS);
 setInterval(refreshGPU, GPU_POLL_MS);

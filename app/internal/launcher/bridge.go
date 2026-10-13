@@ -31,6 +31,12 @@ func (a *App) registerBridgeRoutes(mux *http.ServeMux) {
 		b, _ := r.Context().Value(browserCtxKey{}).(pairedBrowser)
 		writeJSON(w, 200, map[string]any{"device": deviceName(), "browser": map[string]any{"id": b.ID, "name": b.Name}})
 	})
+	mux.HandleFunc("POST /bridge/resume", func(w http.ResponseWriter, r *http.Request) {
+		b, _ := r.Context().Value(browserCtxKey{}).(pairedBrowser)
+		a.pairing().setPaused(b.ID, false, time.Now())
+		a.noteBridge(time.Now())
+		writeJSON(w, 200, map[string]any{"resumed": true})
+	})
 	mux.HandleFunc("POST /bridge/unpair", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := r.Context().Value(browserCtxKey{}).(pairedBrowser)
 		a.pairing().remove(b.ID, time.Now())
@@ -54,6 +60,9 @@ func (a *App) registerBridgeRoutes(mux *http.ServeMux) {
 
 // bridgeOpen lists the bridge paths that work without a paired key.
 var bridgeOpen = map[string]bool{"/bridge/ping": true, "/bridge/pair": true}
+
+// bridgePausedOK lists what a disconnected (paused) browser may still do.
+var bridgePausedOK = map[string]bool{"/bridge/resume": true, "/bridge/unpair": true, "/bridge/device": true}
 
 // corsWriter writes the bridge's CORS headers last, replacing any that a proxied
 // llama-server response added. Browsers reject a response with two
@@ -117,8 +126,14 @@ func (a *App) bridgeGuard(next http.Handler) http.Handler {
 				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"code": "pairing_required", "message": "This browser is not paired with the device."}})
 				return
 			}
+			if b.Paused && !bridgePausedOK[r.URL.Path] {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"code": "disconnected", "message": "Disconnected from the device. Select Reconnect to use it again."}})
+				return
+			}
 			r = r.WithContext(context.WithValue(r.Context(), browserCtxKey{}, b))
-			a.noteBridge(time.Now())
+			if !b.Paused {
+				a.noteBridge(time.Now())
+			}
 		}
 		r.Header.Set("X-Humanizer", "1")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
