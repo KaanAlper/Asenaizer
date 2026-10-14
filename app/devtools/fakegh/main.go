@@ -48,7 +48,8 @@ const defaultNotes = "**humanizer** rewrites AI-written drafts so they read like
 	"- **修复**：选档页偶尔把 `Q3` 的下载大小显示错。\n\n" +
 	"**下载**：Mac（Apple 芯片）用 `.dmg`；Windows 用 `setup.exe` 安装包或免安装 `portable.zip`。\n"
 
-var pkgRe = regexp.MustCompile(`^Humanizer-(\d+\.\d+\.\d+)-.+\.(dmg|exe|zip)$`)
+// Humanizer-<v>-*.{dmg,exe,zip}, and Asenaizer's Asenaizer-windows-x64-<v>.zip and Asenaizer-<v>-linux-x64.tar.gz
+var pkgRe = regexp.MustCompile(`^(?:Humanizer-(\d+\.\d+\.\d+)-.+\.(?:dmg|exe|zip)|Asenaizer-windows-x64-(\d+\.\d+\.\d+)\.zip|Asenaizer-(\d+\.\d+\.\d+)-linux-x64\.tar\.gz)$`)
 
 type asset struct {
 	Name   string `json:"name"`
@@ -95,9 +96,9 @@ func releases(base string) []map[string]any {
 		if err != nil {
 			continue
 		}
-		v := m[1]
+		v := m[1] + m[2] + m[3] // exactly one of the names matched
 		byVer[v] = append(byVer[v], asset{Name: e.Name(), Size: st.Size(), State: "uploaded",
-			URL: base + "/dl/app-v" + v + "/" + e.Name(), Digest: "sha256:" + fileSHA(p, st)})
+			URL: base + "/dl/v" + v + "/" + e.Name(), Digest: "sha256:" + fileSHA(p, st)})
 	}
 	tmpl := defaultNotes
 	if *notes != "" {
@@ -113,9 +114,9 @@ func releases(base string) []map[string]any {
 	var out []map[string]any
 	for _, v := range vs {
 		out = append(out, map[string]any{
-			"tag_name": "app-v" + v, "name": "humanizer " + v + ": check for updates (macOS · Windows)",
+			"tag_name": "v" + v, "name": "humanizer " + v + ": check for updates (macOS · Windows)",
 			"body": strings.ReplaceAll(tmpl, "{v}", v), "draft": false, "prerelease": false,
-			"html_url":     "https://github.com/" + *repo + "/releases/tag/app-v" + v,
+			"html_url":     "https://github.com/" + *repo + "/releases/tag/v" + v,
 			"published_at": time.Now().UTC().Format(time.RFC3339), "assets": byVer[v],
 		})
 	}

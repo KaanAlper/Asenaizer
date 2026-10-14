@@ -41,6 +41,7 @@ Asenaizer-windows-x64-<ver>.zip
 ├─ app\asenaizer.ico
 ├─ app\LICENSE.txt, app\NOTICE.txt
 ├─ app\engine\{cpu,vulkan,cuda}\llama-server.exe (+ DLLs)
+├─ app\site\                    (the website from docs/, served to other computers when allowed)
 ├─ installer\setup.ps1
 └─ installer\uninstall.ps1      (setup copies it into the install dir)
 ```
@@ -75,7 +76,10 @@ Phases before setup.ps1: `release`, `download` (percent, done, total in bytes), 
 
 ## setup.ps1
 
-`param([Parameter(Mandatory)][string]$Source, [switch]$NoStartup, [switch]$Desktop, [switch]$NoLaunch, [string]$ProgressFile, [string]$CancelFile)`
+`param([Parameter(Mandatory)][string]$Source, [switch]$NoStartup, [switch]$Desktop, [switch]$NoLaunch, [switch]$KeepChoices, [string]$ProgressFile, [string]$CancelFile)`
+
+`-KeepChoices` is what the app's own update passes: `-NoStartup` and `-Desktop` follow the current
+install (the `Run` value and the desktop shortcut), and a startup switched off in Task Manager stays off.
 
 Exit codes: `0` ok, `1` error, `2` cancelled. Steps (`$TOTAL_STEPS = 7`):
 
@@ -104,6 +108,23 @@ In the console (no `ASZ_DRIVER`) questions use [gum](https://github.com/charmbra
 v2.0.2 like Logical Lunge's earlier installer (commit `a88fcef`): downloaded into the work dir,
 verified against the release's `checksums.txt`, removed at the end. Accent `#a48bff`. Exit code
 130 cancels. If gum is missing or fails, simple numbered prompts are used instead.
+
+## App updates
+
+The service (`app/internal/launcher/update_asenaizer.go`) looks for the newest `v<semver>` release,
+downloads this system's package, checks its SHA-256 (asset digest or `SHA256SUMS.txt`), unpacks it to
+`<data>\updates\Asenaizer-<ver>-stage` and runs the new `Humanizer --version`. It then exits, and a copy
+of itself in `<data>\updates` runs the package's installer and waits for the new version to answer:
+
+| System | Installer run |
+| --- | --- |
+| Windows | `powershell -File <stage>\installer\setup.ps1 -Source <stage> -KeepChoices -ProgressFile <data>\updates\setup-progress.json` |
+| Linux | `bash <stage>/installer/install-linux.sh --console` with `ASZ_SOURCE=<stage> ASZ_DEFAULTS=1 ASZ_NO_GUI=1 ASZ_KEEP_CHOICES=1` |
+
+The installer stops the tray, replaces the files, rolls back on failure and opens the tray window again.
+The result goes to `<data>\update-result.json`, which the tray shows once. The Linux package therefore
+carries `VERSION`, `site/` and `installer/` (`install-linux.sh`, `uninstall-linux.sh`, `asenaizer-256.png`);
+`install-linux.sh` leaves `installer/` out of the install dir.
 
 ## Linux
 

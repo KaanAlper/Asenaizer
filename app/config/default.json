@@ -123,7 +123,7 @@
   "update": {
     "github_repo": "KaanAlper/Asenaizer",
     "github_api": "https://api.github.com",
-    "tag_prefix": "app-v",
+    "tag_prefix": "v",
     "interval_hours": 24
   }
 }

@@ -89,6 +89,12 @@ jobs:
           app/dist/linux/engine/cpu/llama-server --version
           app/dist/linux/engine/cuda/llama-server --version
           cp LICENSE NOTICE app/dist/linux/
+          # the website for other computers on the network (lan.go)
+          mkdir -p app/dist/linux/site && cp docs/{index.html,app.js,style.css,theme.js,favicon.svg,apple-touch-icon.png} app/dist/linux/site/
+          printf '%s\n' "$VER" > app/dist/linux/VERSION
+          # the app's own updates run the install script from the package (update_other.go)
+          mkdir -p app/dist/linux/installer
+          cp scripts/install-linux.sh scripts/uninstall-linux.sh app/packaging/icon/asenaizer-256.png app/dist/linux/installer/
           mkdir -p out
           tar -C app/dist/linux -czf "out/Asenaizer-$VER-linux-x64.tar.gz" .
           (cd out && sha256sum "Asenaizer-$VER-linux-x64.tar.gz" > "Asenaizer-$VER-linux-x64.tar.gz.sha256")
@@ -109,7 +115,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
           if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
           $dir = "$env:LOCALAPPDATA\Programs\Asenaizer"
-          foreach ($f in 'asenaizer-tray.exe', 'Humanizer.exe', 'engine\cpu\llama-server.exe', 'uninstall.ps1') {
+          foreach ($f in 'asenaizer-tray.exe', 'Humanizer.exe', 'engine\cpu\llama-server.exe', 'uninstall.ps1', 'site\index.html') {
             if (-not (Test-Path "$dir\$f")) { throw "missing $f after install" }
           }
           & "$dir\engine\cpu\llama-server.exe" --version

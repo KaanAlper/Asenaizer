@@ -58,6 +58,7 @@ func Main(o Options) int {
 	showVer := fl.Bool("version", false, "打印版本")
 	updateAPI := fl.String("update-api", os.Getenv("HUMANIZER_UPDATE_API"), "检查 App 更新用的 GitHub API 地址(开发/测试时指向假服务器)")
 	applyPlanPath := fl.String("apply-update", "", "内部使用:按更新计划替换并重启(Windows 更新助手)")
+	siteDir := fl.String("site-dir", os.Getenv("ASENAIZER_SITE_DIR"), "the website's files for other computers on the network (default: site/ next to the program)")
 	fl.SetOutput(io.Discard)
 	var args []string
 	for _, a := range o.Args { // 老版本 Finder 会塞一个 -psn_0_xxx
@@ -153,6 +154,13 @@ func Main(o Options) int {
 		logger.Printf("  引擎 %-6s %s", b.Name, b.Path)
 	}
 	a.web = o.Web
+	a.siteDir = *siteDir
+	if a.siteDir == "" {
+		a.siteDir = defaultSiteDir()
+	}
+	if h := os.Getenv("ASENAIZER_LAN_HOST"); h != "" { // development: one address instead of every interface
+		lanListenHost = h
+	}
 	if *webDir != "" {
 		a.web = os.DirFS(*webDir)
 		logger.Printf("网页从磁盘读取:%s", *webDir)
@@ -221,6 +229,11 @@ func Main(o Options) int {
 	fmt.Println("Humanizer:", a.url)
 
 	a.boot()
+	if a.settings.LAN {
+		if err := a.startLAN(); err != nil {
+			logger.Printf("could not let other computers connect: %v", err)
+		}
+	}
 	if !*noBrowser {
 		if err := openURL(a.url); err != nil {
 			logger.Printf("打开浏览器失败:%v", err)
@@ -255,6 +268,7 @@ func Main(o Options) int {
 	sctx, scancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer scancel()
 	_ = srv.Shutdown(sctx)
+	a.stopLAN()
 	a.mu.Lock()
 	after := a.afterExit
 	a.mu.Unlock()

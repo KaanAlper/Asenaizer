@@ -23,6 +23,11 @@ Source builds fetch SHA-256 verified llama.cpp binaries: CPU plus CUDA when `nvi
 detects an NVIDIA GPU, or CPU plus Vulkan when a Vulkan loader is present. No CUDA compiler is
 needed. The installer downloads no model. A model
 is downloaded on first selection and checked with SHA-256. The service listens on `127.0.0.1`.
+To use this computer's GPU from a browser on another computer, turn on **Settings → Other computers**
+in the tray: the service then also serves the website on port 47630 of its network addresses, and the
+other computer pairs with a code as usual. That traffic is not encrypted, so use it on a network you trust.
+**Settings → Updates** checks the GitHub releases (daily, or on demand) and installs a new version with
+the release's own installer, keeping the sign-in and desktop shortcut choices, then reopens the tray.
 The installed command is `~/.local/bin/asenaizer`; it is also added to session startup.
 Clicking the tray icon opens a small device settings window with model download progress,
 verification status, speed, and pause control.

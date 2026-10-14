@@ -191,12 +191,12 @@ func TestCheckAppPicksLatestAndOnlySendsUA(t *testing.T) {
 	g := newFakeGitHub(t)
 	dmg := fakeDMG(64<<10, 2)
 	g.releases = []map[string]any{
-		g.release("app-v0.9.9", true, false, true, nil),         // 草稿:不认
-		g.release("app-v0.5.0", false, true, true, nil),         // 预发布:不认
-		g.release("app-v0.4.0-beta.1", false, false, true, nil), // 预发布版本号:不认
+		g.release("v0.9.9", true, false, true, nil),         // 草稿:不认
+		g.release("v0.5.0", false, true, true, nil),         // 预发布:不认
+		g.release("v0.4.0-beta.1", false, false, true, nil), // 预发布版本号:不认
 		g.release("model-v9.0.0", false, false, true, nil),      // 别的标签:不认
-		g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg, "SHA256SUMS.txt": []byte("x")}),
-		g.release("app-v0.3.1", false, false, true, nil),
+		g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg, "SHA256SUMS.txt": []byte("x")}),
+		g.release("v0.3.1", false, false, true, nil),
 	}
 	u, _ := newTestUpdater(t, g.srv.URL, "http://127.0.0.1:1")
 	u.check(context.Background(), true)
@@ -323,7 +323,7 @@ func TestAppDownloadResumesAndVerifies(t *testing.T) {
 	g := newFakeGitHub(t)
 	dmg := fakeDMG(3<<20, 3)
 	g.dropFirst = 1 << 20 // 第一次下到 1 MiB 断线
-	g.releases = []map[string]any{g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg})}
+	g.releases = []map[string]any{g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg})}
 	u, _ := newTestUpdater(t, g.srv.URL, "")
 	u.check(context.Background(), true)
 	if err := u.startAppDownload(); err != nil {
@@ -361,7 +361,7 @@ func TestAppDownloadResumesAndVerifies(t *testing.T) {
 
 func TestNewerReleaseDiscardsStalePackage(t *testing.T) {
 	g := newFakeGitHub(t)
-	g.releases = []map[string]any{g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": fakeDMG(64<<10, 6)})}
+	g.releases = []map[string]any{g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": fakeDMG(64<<10, 6)})}
 	u, _ := newTestUpdater(t, g.srv.URL, "")
 	u.check(context.Background(), true)
 	if err := u.startAppDownload(); err != nil {
@@ -372,7 +372,7 @@ func TestNewerReleaseDiscardsStalePackage(t *testing.T) {
 		t.Fatal("已经下好的版本再点下载应什么都不做")
 	}
 	old := filepath.Join(u.dataDir, "updates", "Humanizer-0.3.2-macos-arm64.dmg")
-	g.releases = append([]map[string]any{g.release("app-v0.3.3", false, false, true, map[string][]byte{"Humanizer-0.3.3-macos-arm64.dmg": fakeDMG(64<<10, 7)})}, g.releases...)
+	g.releases = append([]map[string]any{g.release("v0.3.3", false, false, true, map[string][]byte{"Humanizer-0.3.3-macos-arm64.dmg": fakeDMG(64<<10, 7)})}, g.releases...)
 	u.check(context.Background(), true)
 	st := u.status(true, nil)
 	if st.App.Latest.Version != "0.3.3" || st.App.State != "idle" {
@@ -406,7 +406,7 @@ func TestAppDownloadRejectsBadFiles(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			g := newFakeGitHub(t)
-			rel := g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg})
+			rel := g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg})
 			c.mutate(g, rel)
 			g.releases = []map[string]any{rel}
 			u, _ := newTestUpdater(t, g.srv.URL, "")
@@ -433,7 +433,7 @@ func TestAppDownloadUsesSumsWhenNoDigest(t *testing.T) {
 	g := newFakeGitHub(t)
 	dmg := fakeDMG(128<<10, 5)
 	wrong := []byte(strings.Repeat("0", 64) + "  Humanizer-0.3.2-macos-arm64.dmg\n")
-	g.releases = []map[string]any{g.release("app-v0.3.2", false, false, false,
+	g.releases = []map[string]any{g.release("v0.3.2", false, false, false,
 		map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": dmg, "SHA256SUMS.txt": wrong})}
 	u, _ := newTestUpdater(t, g.srv.URL, "")
 	u.check(context.Background(), true)
@@ -448,7 +448,7 @@ func TestAppDownloadUsesSumsWhenNoDigest(t *testing.T) {
 
 func TestAppDownloadNoPackageForPlatform(t *testing.T) {
 	g := newFakeGitHub(t)
-	g.releases = []map[string]any{g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-windows-x64-setup.exe": []byte("MZ...")})}
+	g.releases = []map[string]any{g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-windows-x64-setup.exe": []byte("MZ...")})}
 	u, _ := newTestUpdater(t, g.srv.URL, "")
 	u.check(context.Background(), true)
 	st := u.status(true, nil)
@@ -976,7 +976,7 @@ func TestVersionInPackageName(t *testing.T) {
 
 func TestUpdateRoutes(t *testing.T) {
 	g := newFakeGitHub(t)
-	g.releases = []map[string]any{g.release("app-v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": fakeDMG(4096, 9)})}
+	g.releases = []map[string]any{g.release("v0.3.2", false, false, true, map[string][]byte{"Humanizer-0.3.2-macos-arm64.dmg": fakeDMG(4096, 9)})}
 	dir := t.TempDir()
 	cfg := testConfig(t)
 	cfg.Update.GitHubAPI, cfg.Update.GitHubRepo = g.srv.URL, "owner/repo"

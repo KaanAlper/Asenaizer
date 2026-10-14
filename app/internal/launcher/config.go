@@ -51,7 +51,7 @@ type NPredictRule struct {
 type UpdateConfig struct {
 	GitHubRepo    string `json:"github_repo"`    // owner/name
 	GitHubAPI     string `json:"github_api"`     // 测试时换成本地假服务器
-	TagPrefix     string `json:"tag_prefix"`     // 只认这个前缀的标签(app-v0.3.2)
+	TagPrefix     string `json:"tag_prefix"`     // 只认这个前缀的标签(v0.3.2)
 	IntervalHours int    `json:"interval_hours"` // 自动检查的最小间隔
 }
 
@@ -139,7 +139,7 @@ func (c *Config) validate() error {
 		c.Update.GitHubAPI = "https://api.github.com"
 	}
 	if c.Update.TagPrefix == "" {
-		c.Update.TagPrefix = "app-v"
+		c.Update.TagPrefix = "v"
 	}
 	if c.Update.IntervalHours <= 0 {
 		c.Update.IntervalHours = 24
@@ -202,6 +202,8 @@ type Settings struct {
 	AutoUpdateCheck *bool `json:"auto_update_check,omitempty"`
 	// External:改用外部 OpenAI 兼容服务(external.go)。nil = 没设置过 = 用自带引擎。
 	External *ExternalSettings `json:"external,omitempty"`
+	// LAN: serve the website to other computers on the local network (lan.go). Off by default.
+	LAN bool `json:"lan,omitempty"`
 }
 
 func loadSettings(path string) Settings {

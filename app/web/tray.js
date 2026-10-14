@@ -24,7 +24,11 @@ async function request(path, data) {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Humanizer': '1' }, body: JSON.stringify(data)
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error?.message || result.error || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(result.error?.message || result.error || `HTTP ${response.status}`);
+    error.code = result.error?.code || result.code;
+    throw error;
+  }
   return result;
 }
 
@@ -319,7 +323,7 @@ function showGPUMessage(text) {
 let shown = window.asenaizerTrayShown ?? true;
 window.asenaizerTrayVisible = (visible) => {
   shown = visible;
-  if (visible) { refresh(); refreshGPU(); }
+  if (visible) { refresh(); refreshGPU(); refreshUpdate(); }
 };
 
 async function refreshGPU() {
@@ -393,6 +397,7 @@ async function pollPairing() {
 async function startPairing() {
   $('pair-waiting').hidden = false; $('pair-done').hidden = true;
   $('pair-overlay').hidden = false;
+  refreshLAN();
   try { await request('/app/pair/start', {}); } catch (error) { $('pair-expiry').textContent = error.message; return; }
   clearInterval(pairTimer);
   pollPairing();
@@ -457,7 +462,7 @@ function showSettings(open) {
   $('main-view').hidden = open;
   $('settings-panel').hidden = !open;
   $('settings-open').setAttribute('aria-expanded', String(open));
-  if (open) refresh();
+  if (open) { refresh(); refreshLAN(); refreshUpdate(); }
 }
 $('settings-open').onclick = () => showSettings($('settings-panel').hidden);
 $('settings-back').onclick = () => showSettings(false);
@@ -484,18 +489,253 @@ $('unload').onclick = async () => {
 };
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
-  if (!$('pair-overlay').hidden) $('pair-cancel').click();
+  if (!$('update-overlay').hidden) { if (!$('update-later').disabled && !$('update-later').hidden) $('update-later').click(); }
+  else if (!$('pair-overlay').hidden) $('pair-cancel').click();
   else if (!$('settings-panel').hidden) showSettings(false);
   else ipc('hide');
 });
 $('titlebar').addEventListener('mousedown', (event) => {
   if (event.button === 0 && !event.target.closest('button')) ipc('drag');
 });
+// Other computers on this network (lan.go): the service serves the website on its own port, and
+// a browser there pairs with a code like any other.
+let lan = null;
+async function refreshLAN() {
+  try { lan = await request('/app/lan'); } catch { return; }
+  renderLAN();
+}
+function renderLAN() {
+  if (!lan) return;
+  $('lan-toggle').checked = lan.enabled;
+  $('lan-toggle').disabled = !lan.site;
+  $('lan-detail').textContent = !lan.site ? 'This build cannot serve the website to other computers.'
+    : lan.enabled ? (lan.addresses.length ? 'Other computers on this network can open:' : 'On, but this computer has no network address right now.')
+    : lan.error || 'Let a browser on another computer in this network use this GPU.';
+  $('lan-addresses').hidden = !lan.enabled || !lan.addresses.length;
+  $('lan-addresses').replaceChildren(...lan.addresses.map((address) => {
+    const li = el('li');
+    const text = el('div', 'addr');
+    text.append(el('code', '', address.url.replace(/\/$/, '')), el('small', '', address.interface));
+    li.append(text, button('Copy', async (event) => {
+      const copy = event.currentTarget;
+      try { await navigator.clipboard.writeText(address.url); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1400); }
+      catch { /* the address can still be selected and copied by hand */ }
+    }, true));
+    return li;
+  }));
+  $('lan-warning').hidden = !lan.enabled;
+  const first = lan.enabled ? lan.addresses[0] : null;
+  $('pair-lan').hidden = !first;
+  if (first) $('pair-lan-url').textContent = first.url.replace(/\/$/, '');
+}
+$('lan-toggle').onchange = async () => {
+  const enabled = $('lan-toggle').checked;
+  $('lan-toggle').disabled = true;
+  try { lan = await request('/app/lan', { enabled }); } catch (error) { $('lan-detail').textContent = error.message; }
+  $('lan-toggle').disabled = false;
+  renderLAN();
+};
+
+// Updates (update.go, update_asenaizer.go): the service checks GitHub Releases. Installing
+// downloads and checks the package, then the release's own installer replaces the app, which
+// closes this window and opens it again on the new version; that version reports the result.
+let update = null;
+let updateFlow = false; // Install and restart was chosen in this window
+let applying = false;
+let manualCheck = false;
+let dialogMode = 'offer'; // offer | result
+const offered = new Set(); // versions already offered while this window lived
+const UPDATE_ERRORS = {
+  busy: 'A rewrite is running. Try again when it has finished.',
+  offline: 'Could not reach GitHub. Check the connection and try again.',
+  rate_limited: 'GitHub is limiting requests right now. Try again later.',
+  network: 'The download stopped. Check the connection and try again.',
+  not_package: 'The download was not an Asenaizer package. A network sign-in page may have replaced it.',
+  no_package: 'This release has no package for this system yet.',
+  unsupported: 'This copy cannot update itself. Download the new version from GitHub.',
+  not_ready: 'The update is not downloaded yet.',
+};
+const updateError = (code, message) => UPDATE_ERRORS[code] || message || 'Something went wrong.';
+// GitHub's generated release notes as plain text: no markup, no "by @user in <link>".
+function notesText(markdown) {
+  return (markdown || '').replace(/\r/g, '').replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^\*\*Full Changelog\*\*.*$/gim, '').replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/ by @\S+ in \S+/g, '').replace(/^\s*[*-]\s+/gm, '• ')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function refreshUpdate() {
+  try { update = await request('/app/update'); }
+  catch {
+    // The service exits to install the update; the window stays on "Installing" until it closes.
+    if (updateFlow && applying && !$('update-overlay').hidden) showInstalling();
+    return;
+  }
+  renderUpdate();
+}
+function showInstalling() {
+  $('update-kicker').textContent = 'Restarting';
+  $('update-progress').hidden = false;
+  $('update-stage').textContent = 'Installing. This window closes and opens again on the new version.';
+  $('update-percent').textContent = '';
+  $('update-bar').removeAttribute('value');
+  $('update-bytes').textContent = '';
+  $('update-speed').textContent = '';
+  $('update-error').hidden = true;
+  $('update-install').disabled = true;
+  $('update-later').disabled = true;
+}
+function renderUpdate() {
+  const u = update;
+  if (!u) return;
+  const app = u.app, latest = app.latest;
+  const available = !u.dev && app.available && !!latest;
+  $('update-title').textContent = `Asenaizer ${u.current}`;
+  $('update-auto').checked = u.auto;
+  $('update-auto').disabled = u.dev;
+  $('update-check').disabled = u.dev || u.checking;
+  $('update-check').textContent = u.checking ? 'Checking…' : 'Check now';
+  $('update-detail').textContent = u.dev ? 'Development build · updates are off'
+    : u.checking ? 'Checking GitHub…'
+    : available ? `Version ${latest.version} is available`
+    : u.error ? updateError(u.error)
+    : u.last_ok ? `Up to date · checked ${ago(u.last_ok)}` : 'Not checked yet';
+  $('update-open').hidden = !available;
+  if (available) $('update-open').textContent = `Update to ${latest.version}`;
+
+  if (u.result) { showUpdateResult(u.result); return; }
+  if (dialogMode === 'result') return;
+  if (manualCheck && !u.checking) { manualCheck = false; if (available) openUpdate(); }
+  if (!available) { if (!updateFlow) $('update-overlay').hidden = true; return; }
+  // A new version is offered once per window; Later keeps it quiet until the next version.
+  if (shown && u.dismissed !== latest.version && !offered.has(latest.version)) { offered.add(latest.version); openUpdate(); }
+  if (updateFlow && app.state === 'ready' && !applying) {
+    applying = true;
+    request('/app/update/app-apply', {}).catch((error) => { applying = false; updateFlow = false; showUpdateError(error); });
+  }
+  if (app.state === 'error') { updateFlow = false; applying = false; }
+  if (!$('update-overlay').hidden) renderUpdateDialog();
+}
+function showUpdateError(error) {
+  $('update-error').hidden = false;
+  $('update-error').textContent = updateError(error.code, error.message);
+}
+function openUpdate() {
+  if (!update?.app?.latest) return;
+  dialogMode = 'offer';
+  $('update-overlay').hidden = false;
+  $('update-later').hidden = false;
+  renderUpdateDialog();
+  $('update-install').focus();
+}
+function renderUpdateDialog() {
+  const u = update, app = u.app, latest = app.latest;
+  if (!latest || dialogMode !== 'offer') return;
+  // Downloaded and Install and restart chosen: the apply request is on its way.
+  const st = updateFlow && applying && app.state === 'ready' ? 'preparing' : app.state;
+  const p = app.progress;
+  const busy = ['downloading', 'preparing', 'restarting'].includes(st);
+  $('update-kicker').textContent = st === 'restarting' ? 'Restarting' : 'Update available';
+  $('update-dialog-title').textContent = `Asenaizer ${latest.version}`;
+  $('update-sub').textContent = `You have ${u.current}${latest.size ? ` · ${Math.round(latest.size / 1024 ** 2)} MB download` : ''}`;
+  $('update-notes').textContent = notesText(latest.notes);
+  $('update-progress').hidden = !busy && st !== 'paused';
+  if (st === 'downloading' || st === 'paused') {
+    const percent = p?.total ? Math.floor(p.received / p.total * 100) : 0;
+    $('update-stage').textContent = st === 'paused' ? 'Download paused' : p?.stage === 'verify' ? 'Checking the download…' : 'Downloading';
+    $('update-percent').textContent = `${percent}%`;
+    $('update-bar').value = percent;
+    $('update-bytes').textContent = p?.total ? `${gb(p.received)} / ${gb(p.total)}` : '';
+    $('update-speed').textContent = st === 'downloading' && p?.speed ? `${(p.speed / 1024 ** 2).toFixed(1)} MB/s` : '';
+  } else if (busy) {
+    $('update-stage').textContent = st === 'preparing' ? 'Preparing the update…' : 'Installing. This window closes and opens again on the new version.';
+    $('update-percent').textContent = '';
+    $('update-bar').removeAttribute('value'); // indeterminate
+    $('update-bytes').textContent = '';
+    $('update-speed').textContent = '';
+  }
+  const err = app.error;
+  if (err) {
+    $('update-error').hidden = false;
+    $('update-error').textContent = err.code === 'prepare_failed' ? `The update could not be prepared: ${err.message}` : updateError(err.code, err.message);
+  } else if (busy) $('update-error').hidden = true;
+  const manual = app.mode === 'manual' || app.mode === 'none';
+  $('update-install').textContent = manual ? 'Download from GitHub' : st === 'paused' ? 'Resume and install' : err ? 'Try again' : 'Install and restart';
+  $('update-install').disabled = busy;
+  $('update-later').textContent = st === 'downloading' ? 'Cancel' : 'Later';
+  $('update-later').disabled = st === 'preparing' || st === 'restarting';
+}
+// The new version (or the old one after a failed install) shows how the last update went.
+function showUpdateResult(result) {
+  dialogMode = 'result';
+  updateFlow = false;
+  $('update-overlay').hidden = false;
+  $('update-kicker').textContent = result.ok ? 'Updated' : 'Update failed';
+  $('update-dialog-title').textContent = result.ok ? `Asenaizer ${result.to}` : `Still on Asenaizer ${result.from}`;
+  $('update-sub').textContent = result.ok ? `Updated from ${result.from}.` : '';
+  $('update-notes').textContent = result.ok && update.app.latest?.version === result.to ? notesText(update.app.latest.notes) : '';
+  $('update-progress').hidden = true;
+  $('update-error').hidden = result.ok;
+  $('update-error').textContent = result.error || '';
+  $('update-install').textContent = 'OK';
+  $('update-install').disabled = false;
+  $('update-later').hidden = true;
+}
+async function installUpdate() {
+  if (dialogMode === 'result') {
+    try { await request('/app/update/ack', {}); } catch { /* shown again next time */ }
+    dialogMode = 'offer';
+    update.result = null;
+    $('update-overlay').hidden = true;
+    $('update-later').hidden = false;
+    return;
+  }
+  const app = update?.app;
+  if (!app) return;
+  if (app.mode === 'manual' || app.mode === 'none') {
+    if (window.ipc) ipc('open-releases'); else window.open('https://github.com/KaanAlper/Asenaizer/releases', '_blank', 'noopener');
+    return;
+  }
+  updateFlow = true;
+  applying = app.state === 'ready';
+  $('update-error').hidden = true;
+  try { await request(applying ? '/app/update/app-apply' : '/app/update/app-download', {}); }
+  catch (error) { updateFlow = false; applying = false; showUpdateError(error); }
+  await refreshUpdate();
+}
+async function laterUpdate() {
+  const app = update?.app;
+  updateFlow = false;
+  if (app?.state === 'downloading') { try { await request('/app/update/app-cancel', {}); } catch { /* the next poll shows the state */ } }
+  else if (app?.latest) { try { await request('/app/update/dismiss', { version: app.latest.version }); } catch { /* asked again later */ } }
+  $('update-overlay').hidden = true;
+  refreshUpdate();
+}
+$('update-install').onclick = installUpdate;
+$('update-later').onclick = laterUpdate;
+$('update-open').onclick = openUpdate;
+$('update-check').onclick = async () => {
+  manualCheck = true;
+  try { await request('/app/update/check', {}); } catch (error) { manualCheck = false; $('update-detail').textContent = updateError(error.code, error.message); return; }
+  refreshUpdate();
+};
+$('update-auto').onchange = async () => {
+  try { await request('/app/update/auto', { auto: $('update-auto').checked }); } catch { /* the next refresh shows the saved choice */ }
+  refreshUpdate();
+};
+// The tray menu's "Install update" item opens the window on the update.
+window.asenaizerShowUpdate = () => { refreshUpdate().then(() => { if (update?.app?.available) openUpdate(); }); };
+setInterval(() => { if (shown && (updateFlow || manualCheck || update?.checking || !$('update-overlay').hidden)) refreshUpdate(); }, 1000);
+setInterval(() => { if (shown) refreshUpdate(); }, 60_000);
+
 $('service-port').textContent = `127.0.0.1:${location.port}`;
 
 showTab(location.hash === '#models' ? 'models' : 'home');
 if (location.hash === '#settings') showSettings(true);
 refresh();
+refreshUpdate();
+refreshLAN();
 request('/app/pair/state').then((st) => { $('device-name').textContent = st.device || '—'; }).catch(() => {});
 setInterval(refresh, STATUS_POLL_MS);
 setInterval(refreshGPU, GPU_POLL_MS);

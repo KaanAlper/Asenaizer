@@ -25,6 +25,8 @@ rm -f rsrc_windows_*.syso
 cargo build --locked --release --manifest-path tray/Cargo.toml
 cp tray/target/release/asenaizer-tray.exe "$PKG/app/asenaizer-tray.exe"
 cp -R dist/engine "$PKG/app/engine"
+# the website, served to other computers on the network when the user allows it (lan.go)
+mkdir -p "$PKG/app/site" && cp ../docs/{index.html,app.js,style.css,theme.js,favicon.svg,apple-touch-icon.png} "$PKG/app/site/"
 cp packaging/icon/asenaizer.ico "$PKG/app/asenaizer.ico"
 cp ../LICENSE "$PKG/app/LICENSE.txt"
 cp ../NOTICE "$PKG/app/NOTICE.txt"

@@ -16,6 +16,7 @@ use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEv
 use wry::{WebContext, WebViewBuilder};
 
 const SITE: &str = "https://kaanalper.github.io/Asenaizer/";
+const RELEASES: &str = "https://github.com/KaanAlper/Asenaizer/releases";
 const FALLBACK_PORT: u16 = 47615;
 
 #[derive(Clone, Debug)]
@@ -25,6 +26,8 @@ enum UserEvent {
     /// Messages from tray.html: "hide" (close button, Escape) and "drag" (header).
     Ipc(String),
     ServiceStopped,
+    /// The version an update is available to, from the service's periodic check.
+    Update(Option<String>),
 }
 
 #[derive(serde::Deserialize)]
@@ -73,6 +76,26 @@ fn helper_running() -> bool {
     let _ = stream.write_all(format!("GET /app/ping HTTP/1.1\r\nHost: 127.0.0.1:{p}\r\nConnection: close\r\n\r\n").as_bytes());
     let mut body = String::new();
     stream.read_to_string(&mut body).is_ok() && body.contains("\"app\":\"humanizer\"")
+}
+
+/// GETs a JSON document from the service. HTTP/1.0 keeps the reply unchunked.
+fn service_json(path: &str) -> Option<serde_json::Value> {
+    let p = port();
+    let mut stream = TcpStream::connect_timeout(&([127, 0, 0, 1], p).into(), Duration::from_millis(500)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+    stream.write_all(format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{p}\r\n\r\n").as_bytes()).ok()?;
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).ok()?;
+    let (head, body) = reply.split_once("\r\n\r\n")?;
+    let status = head.split_whitespace().nth(1)?;
+    if status != "200" { return None; }
+    serde_json::from_str(body).ok()
+}
+
+/// The version /app/update offers, unless this is a development build.
+fn available_update(update: &serde_json::Value) -> Option<String> {
+    if update["dev"].as_bool() == Some(true) || update["app"]["available"].as_bool() != Some(true) { return None; }
+    update["app"]["latest"]["version"].as_str().filter(|v| !v.is_empty()).map(str::to_owned)
 }
 
 fn helper_path() -> PathBuf {
@@ -197,7 +220,20 @@ fn main() {
         if stopped { let _ = stopped_proxy.send_event(UserEvent::ServiceStopped); break; }
     });
 
+    // The service checks for updates about 20 s after it starts and then daily; the menu shows
+    // what it found, so an update is visible while the window is closed.
+    let update_proxy = event_loop.create_proxy();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(45));
+        loop {
+            let version = service_json("/app/update").as_ref().and_then(available_update);
+            if update_proxy.send_event(UserEvent::Update(version)).is_err() { break; }
+            std::thread::sleep(Duration::from_secs(600));
+        }
+    });
+
     let mut tray = None;
+    let mut update_version: Option<String> = None;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -208,7 +244,23 @@ fn main() {
             }
             Event::UserEvent(UserEvent::ServiceStopped) => {
                 status.set_text("Local service stopped");
+                status.set_enabled(false);
                 if let Some(t) = tray.as_ref() { let _ = t.set_tooltip(Some("Asenaizer · service stopped")); }
+            }
+            Event::UserEvent(UserEvent::Update(version)) => {
+                if version == update_version { return; }
+                update_version = version;
+                let tooltip = match &update_version {
+                    Some(v) => { status.set_text(format!("Update to {v}…")); status.set_enabled(true); "Asenaizer · update available" }
+                    None => { status.set_text(format!("Local service · port {}", port())); status.set_enabled(false); "Asenaizer · local model" }
+                };
+                if let Some(t) = tray.as_ref() { let _ = t.set_tooltip(Some(tooltip)); }
+            }
+            Event::UserEvent(UserEvent::Menu(event)) if event.id == status.id() => {
+                if let (Some(window), Some(view)) = (settings_window.as_ref(), settings_view.as_ref()) {
+                    set_shown(window, Some(view), true);
+                    let _ = view.evaluate_script("window.asenaizerShowUpdate?.()");
+                } else { open_url(&format!("http://127.0.0.1:{}/tray.html#settings", port())); }
             }
             Event::UserEvent(UserEvent::Menu(event)) if event.id == site.id() => open_url(SITE),
             Event::UserEvent(UserEvent::Menu(event)) if event.id == settings.id() => {
@@ -226,6 +278,7 @@ fn main() {
                     match message.as_str() {
                         "hide" => set_shown(window, settings_view.as_ref(), false),
                         "open-site" => open_url(SITE),
+                        "open-releases" => open_url(RELEASES),
                         "drag" => { let _ = window.drag_window(); }
                         other => {
                             if let Some(code) = other.strip_prefix("pair:") { open_site_with_code(code); }
@@ -248,7 +301,18 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::is_pair_code;
+    use super::{available_update, is_pair_code};
+
+    #[test]
+    fn reads_the_offered_update() {
+        let offer = serde_json::json!({"dev": false, "app": {"available": true, "latest": {"version": "0.2.0"}}});
+        assert_eq!(available_update(&offer).as_deref(), Some("0.2.0"));
+        let current = serde_json::json!({"dev": false, "app": {"available": false, "latest": {"version": "0.1.0"}}});
+        assert_eq!(available_update(&current), None);
+        let dev = serde_json::json!({"dev": true, "app": {"available": true, "latest": {"version": "0.2.0"}}});
+        assert_eq!(available_update(&dev), None);
+        assert_eq!(available_update(&serde_json::json!({})), None);
+    }
 
     #[test]
     fn accepts_issued_pairing_codes() {

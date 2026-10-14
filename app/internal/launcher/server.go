@@ -28,6 +28,7 @@ func (a *App) handler() http.Handler {
 	mux.HandleFunc("GET /app/status", a.handleStatus)
 	mux.HandleFunc("GET /app/gpu", a.handleGPU)
 	a.registerPairingRoutes(mux)
+	a.registerLANRoutes(mux)
 	mux.HandleFunc("POST /app/model/unload", a.handleUnload)
 	a.registerVersionRoutes(mux)
 	mux.HandleFunc("GET /app/config", a.handleConfig)

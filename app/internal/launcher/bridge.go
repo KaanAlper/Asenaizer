@@ -105,7 +105,9 @@ func (c *corsWriter) Write(b []byte) (int, error) {
 // Unwrap lets http.ResponseController flush streamed tokens through this writer.
 func (c *corsWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
+// bridgeGuard admits the public website, a cross-origin page, and then checks its pairing.
 func (a *App) bridgeGuard(next http.Handler) http.Handler {
+	auth := a.bridgeAuth(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 		if a.webOrigin == "" || origin != a.webOrigin {
@@ -119,6 +121,14 @@ func (a *App) bridgeGuard(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		auth.ServeHTTP(w, r)
+	})
+}
+
+// bridgeAuth checks the browser's pairing key. The website (bridgeGuard) and the page this
+// device serves on the local network (lan.go) both pass through it.
+func (a *App) bridgeAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !bridgeOpen[r.URL.Path] {
 			key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 			b, ok := a.pairing().authenticate(key, time.Now())

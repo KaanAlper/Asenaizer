@@ -575,7 +575,7 @@ func (u *updater) status(auto bool, tiers []Tier) updStatus {
 	av := updAppView{Mode: u.inst.Mode, Reason: u.inst.Reason, Kind: u.inst.Kind, State: "idle"}
 	if rel := u.st.Latest; rel != nil {
 		v := &appReleaseView{Version: rel.Version, Name: rel.Name, Notes: rel.Notes, URL: rel.URL, PublishedAt: rel.PublishedAt}
-		if a := pickAsset(rel.Assets, u.inst.Suffix); a != nil {
+		if a := assetFor(rel, u.inst); a != nil {
 			v.Asset, v.Size = a.Name, a.Size
 		}
 		av.Latest = v

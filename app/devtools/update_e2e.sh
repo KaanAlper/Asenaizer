@@ -120,7 +120,7 @@ check "确认后显示已是最新" '[ "$(model_state)" = current ]'
 echo "4. App 更新:下载 → 校验 → 替换 → 重启到 0.9.0"
 post /app/update/app-download >/dev/null
 wait_until "下载完" 20 '[ "$(upd | field "d[\"app\"][\"state\"]")" = ready ]' && ok "安装包下载并校验通过" || bad "安装包下载并校验通过"
-check "fakegh 上的下载走了 302 跳转" 'grep -q "GET /dl/app-v0.9.0/Humanizer-0.9.0-macos-arm64.dmg" "$W/fakegh.log" && grep -q "GET /blob/Humanizer-0.9.0" "$W/fakegh.log"'
+check "fakegh 上的下载走了 302 跳转" 'grep -q "GET /dl/v0.9.0/Humanizer-0.9.0-macos-arm64.dmg" "$W/fakegh.log" && grep -q "GET /blob/Humanizer-0.9.0" "$W/fakegh.log"'
 OLDPID=$(curl -s "http://127.0.0.1:$PORT/app/ping" | field 'd["pid"]')
 post /app/update/app-apply >/dev/null
 wait_until "新版本起来" 60 '[ "$(ping_ver)" = 0.9.0 ]' && ok "重启到了 0.9.0(端口没变)" || bad "重启到了 0.9.0(端口没变)"

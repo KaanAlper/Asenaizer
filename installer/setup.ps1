@@ -16,6 +16,7 @@ param(
     [switch]$NoStartup,                             # do not start Asenaizer at sign-in (removes the Run value)
     [switch]$Desktop,                               # add a desktop shortcut
     [switch]$NoLaunch,                              # do not open Asenaizer when done
+    [switch]$KeepChoices,                           # an update from the app: keep the sign-in and desktop choices as they are
     [string]$ProgressFile,
     [string]$CancelFile
 )
@@ -46,6 +47,13 @@ $WEBVIEW2_ID = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 $WEBVIEW2_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
 $URL_INFO = 'https://kaanalper.github.io/Asenaizer/'
 $Source = [IO.Path]::GetFullPath($Source).TrimEnd('\')
+if ($KeepChoices) {
+    # the app updates itself: start at sign-in only if it does now, and keep a desktop shortcut only if there is one
+    $runKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($K_RUN)
+    $NoStartup = -not ($runKey -and $null -ne $runKey.GetValue('Asenaizer'))
+    if ($runKey) { $runKey.Close() }
+    $Desktop = Test-Path -LiteralPath (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Asenaizer.lnk')
+}
 
 $script:warnings = New-Object Collections.ArrayList
 function Log([string]$m) {
@@ -472,8 +480,8 @@ try {
     if ($NoStartup) { Remove-RegValue $K_RUN 'Asenaizer' }
     else {
         Set-RegValue $K_RUN 'Asenaizer' "`"$TRAY`"" 'String'
-        # switched off in Task Manager's startup apps before: the user asked for it again
-        Remove-RegValue $K_APPROVED 'Asenaizer'
+        # switched off in Task Manager's startup apps before: the user asked for it again (an update leaves it off)
+        if (-not $KeepChoices) { Remove-RegValue $K_APPROVED 'Asenaizer' }
     }
     Step-Progress 99
 

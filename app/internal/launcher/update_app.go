@@ -24,6 +24,8 @@ type installInfo struct {
 	Mode   string // replace(原地替换后重启)/ installer(静默跑安装包后重启)/ manual(下好后打开安装包)/ none
 	Reason string // manual / none 的原因:dmg / translocated / readonly / dev / unsupported
 	Suffix string // 本平台安装包的文件名后缀
+	// AssetName is the exact package name with {ver} for the version (Asenaizer); it wins over Suffix.
+	AssetName string
 }
 
 // appJob:一次 App 更新。下载 → ready → 用户点「重启并更新」→ preparing → restarting。
@@ -47,7 +49,7 @@ func (u *updater) restoreAppJob() {
 	if rel == nil || !newerVersion(rel.Version, u.version) {
 		return
 	}
-	a := pickAsset(rel.Assets, u.inst.Suffix)
+	a := assetFor(rel, u.inst)
 	if a == nil {
 		return
 	}
@@ -87,6 +89,10 @@ func packageVerifier(name string) func(string) error {
 			if n < 4 || string(head) != "PK\x03\x04" {
 				return bad()
 			}
+		case strings.HasSuffix(lower, ".tar.gz"):
+			if n < 2 || head[0] != 0x1f || head[1] != 0x8b {
+				return bad()
+			}
 		case strings.HasSuffix(lower, ".dmg"):
 			// UDIF 镜像结尾 512 字节是 "koly" 开头的尾块
 			st, err := f.Stat()
@@ -122,7 +128,7 @@ func (u *updater) startAppDownload() error {
 	if u.inst.Mode == "none" {
 		return &PermanentError{Code: "unsupported", Msg: "这个平台没有可自动下载的安装包,请到 Releases 页面手动下载"}
 	}
-	asset := pickAsset(rel.Assets, u.inst.Suffix)
+	asset := assetFor(rel, u.inst)
 	if asset == nil {
 		return &PermanentError{Code: "no_package", Msg: "这个版本没有本平台的安装包"}
 	}
@@ -291,7 +297,7 @@ func (u *updater) prepare(j *appJob) (*applyPlan, error) {
 		}
 		if got != j.Asset.SHA256 {
 			_ = os.Remove(j.Path)
-			return nil, fmt.Errorf("安装包校验失败,已删除,请重新下载")
+			return nil, fmt.Errorf("the package failed its SHA-256 check and was deleted; download it again")
 		}
 	}
 	plan := &applyPlan{From: u.version, To: j.Version, DataDir: u.dataDir}
@@ -311,11 +317,13 @@ func (u *updater) prepare(j *appJob) (*applyPlan, error) {
 // Windows:运行中的 exe 和它的目录换不了,所以把自己复制一份到数据目录当「更新助手」,
 // 旧进程退出后由助手执行整份计划。
 type applyPlan struct {
-	Kind      string   `json:"kind"`             // swap(换目录)/ installer(静默安装)
+	Kind      string   `json:"kind"`             // swap(换目录)/ installer(静默安装)/ script(Asenaizer 的安装脚本)
 	Target    string   `json:"target"`           // 当前安装位置
 	Staged    string   `json:"staged,omitempty"` // swap:准备好的新版本
 	Backup    string   `json:"backup"`           // 旧版本挪到这里,成功后删,失败时换回
 	Installer []string `json:"installer,omitempty"`
+	// InstallerEnv is added to the installer's environment (kind script: the Linux options).
+	InstallerEnv []string `json:"installer_env,omitempty"`
 	Relaunch  []string `json:"relaunch"` // 启动 Target 里的 App(新旧版本都用它)
 	Env       []string `json:"env,omitempty"`
 	From      string   `json:"from"`
@@ -361,6 +369,7 @@ func undoSwap(target, backup string) error {
 }
 
 type applyHooks struct {
+	install func(argv, env []string, timeout time.Duration) error // kind script; nil = runInstaller
 	logf    func(string, ...any)
 	launch  func(argv, env []string) error
 	ready   func(dataDir, version string, timeout time.Duration) bool
@@ -397,6 +406,9 @@ func runApplyPlan(p *applyPlan, h applyHooks) updateResult {
 	}
 	if p.WaitPID > 0 {
 		h.waitPID(p.WaitPID, 60*time.Second)
+	}
+	if p.Kind == "script" {
+		return runScriptPlan(p, h, res, readyTimeout)
 	}
 
 	if !p.Swapped {
@@ -446,13 +458,16 @@ func runApplyPlan(p *applyPlan, h applyHooks) updateResult {
 	return fail("新版本 %s 没能启动,已换回 %s", p.To, p.From)
 }
 
-func runInstaller(argv []string, timeout time.Duration) error {
+func runInstaller(argv []string, timeout time.Duration, env ...string) error {
 	if len(argv) == 0 {
 		return errors.New("没有安装包命令")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	prepareCmd(cmd)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
@@ -579,13 +594,16 @@ func (u *updater) cleanupStale() {
 }
 
 func versionInPackageName(name string) string {
-	if !strings.HasPrefix(name, "Humanizer-") {
+	if !strings.HasPrefix(name, "Humanizer-") && !strings.HasPrefix(name, "Asenaizer-") {
 		return ""
 	}
-	rest := strings.TrimPrefix(name, "Humanizer-")
-	if i := strings.Index(rest, "-"); i > 0 {
-		if _, ok := parseSemver(rest[:i]); ok {
-			return rest[:i]
+	// Humanizer-0.3.2-macos-arm64.dmg, Asenaizer-windows-x64-0.2.0.zip, Asenaizer-0.2.0-linux-x64.tar.gz
+	for _, part := range strings.Split(name, "-")[1:] {
+		part = strings.TrimSuffix(strings.TrimSuffix(part, ".zip"), ".tar.gz")
+		if strings.Count(part, ".") == 2 {
+			if _, ok := parseSemver(part); ok {
+				return part
+			}
 		}
 	}
 	return ""
@@ -634,11 +652,11 @@ func checkVersionOutput(ctx context.Context, exe, want string) error {
 	prepareCmd(cmd)
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("新版本的程序跑不起来:%v", err)
+		return fmt.Errorf("the new version does not run: %v", err)
 	}
 	got := strings.TrimSpace(string(out))
 	if f := strings.Fields(got); len(f) == 2 && f[0] == "humanizer" && f[1] == want {
 		return nil
 	}
-	return fmt.Errorf("新版本的程序报告的版本是 %q,应为 %s", got, want)
+	return fmt.Errorf("the new version reports %q instead of %s", got, want)
 }

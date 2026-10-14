@@ -91,6 +91,32 @@
         <p class="group-note">A paired browser reconnects on its own. Remove it to require a new code.</p>
       </section>
 
+      <section class="settings-group" aria-labelledby="lan-title">
+        <div class="group-head">
+          <h2 id="lan-title" class="label">Other computers</h2>
+          <label class="switch" title="Allow other computers on this network">
+            <input id="lan-toggle" type="checkbox" role="switch" aria-describedby="lan-detail">
+            <span class="switch-track" aria-hidden="true"></span>
+            <span class="sr-only">Allow other computers on this network</span>
+          </label>
+        </div>
+        <p id="lan-detail" class="group-note">Let a browser on another computer in this network use this GPU.</p>
+        <ul id="lan-addresses" class="address-list" hidden></ul>
+        <p id="lan-warning" class="group-note warn-note" hidden>On the other computer, open the address above and enter a code from <b>Connect a browser</b>. Drafts travel over your network without encryption, so use this only on a network you trust. If Windows asks, allow Asenaizer on private networks.</p>
+      </section>
+
+      <section class="settings-group" aria-labelledby="updates-title">
+        <div class="group-head">
+          <h2 id="updates-title" class="label">Updates</h2>
+          <button id="update-check" class="btn secondary" type="button">Check now</button>
+        </div>
+        <div class="update-card">
+          <div class="conn-text"><strong id="update-title">Asenaizer</strong><span id="update-detail">Not checked yet</span></div>
+          <button id="update-open" class="btn" type="button" hidden>Update</button>
+        </div>
+        <label class="check-row"><input id="update-auto" type="checkbox"> Check for updates automatically</label>
+      </section>
+
       <section class="settings-group" aria-labelledby="theme-title">
         <h2 id="theme-title" class="label">Appearance</h2>
         <div class="segmented" role="radiogroup" aria-labelledby="theme-title">
@@ -120,6 +146,7 @@
       <p class="pair-code" id="pair-code" aria-live="polite">––– –––</p>
       <button id="pair-open-site" class="site-button pair-open" type="button">Open website with this code <span aria-hidden="true">↗</span></button>
       <p class="pair-hint">The code is filled in for you. Select <b>Connect</b> on the website to finish.</p>
+      <p class="pair-hint" id="pair-lan" hidden>On another computer, open <b id="pair-lan-url"></b> and enter the code there.</p>
       <p class="pair-expiry" id="pair-expiry"></p>
       <div class="pair-actions">
         <button id="pair-new" class="btn secondary" type="button">New code</button>
@@ -130,6 +157,25 @@
       <span class="pair-check" aria-hidden="true">✓</span>
       <h2>Connected</h2>
       <p id="pair-done-name"></p>
+    </div>
+  </section>
+
+  <section id="update-overlay" class="update-overlay" role="dialog" aria-modal="true" aria-labelledby="update-dialog-title" hidden>
+    <div class="update-dialog">
+      <p class="label" id="update-kicker">Update available</p>
+      <h2 id="update-dialog-title">Asenaizer</h2>
+      <p class="update-sub" id="update-sub"></p>
+      <div class="update-notes" id="update-notes" tabindex="0" aria-label="What's new"></div>
+      <div class="update-progress" id="update-progress" hidden>
+        <div class="progress-head"><strong id="update-stage">Downloading</strong><span id="update-percent"></span></div>
+        <progress id="update-bar" max="100"></progress>
+        <div class="progress-detail"><span id="update-bytes"></span><span id="update-speed"></span></div>
+      </div>
+      <p class="error" id="update-error" role="alert" hidden></p>
+      <div class="update-actions">
+        <button id="update-later" class="btn secondary" type="button">Later</button>
+        <button id="update-install" class="btn" type="button">Install and restart</button>
+      </div>
     </div>
   </section>
 </body>

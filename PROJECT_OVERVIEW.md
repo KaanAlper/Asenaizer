@@ -37,7 +37,13 @@ another general purpose Llama model merely to run the existing Humanizer weights
   per user. Windows/macOS tray packaging has not yet been integrated into releases.
 - The bridge checks the exact configured origin and requires user approval and a random
   session key. It listens on loopback. Browser local network permission still depends
-  on the user's browser.
+  on the user's browser. When the user turns on "Other computers" in the tray, a second
+  listener serves the website itself on port 47630 of every interface, with only the paired
+  `/bridge/*` routes behind it (`app/internal/launcher/lan.go`); `/app/*` and `/api/*` stay
+  on loopback. That traffic is plain HTTP on the local network.
+- The tray checks GitHub releases (`v<semver>`) and installs an update with the package's own
+  installer (`installer/setup.ps1 -KeepChoices`, `install-linux.sh` with `ASZ_KEEP_CHOICES=1`),
+  run by a copy of the service from the data folder (`update_asenaizer.go`).
 - Q8, Q6, Q4, Q3 and 2-bit GGUF hashes are configured. Q6 downloaded and passed SHA-256
   verification on an RTX 5080 Laptop GPU. The installed CUDA llama.cpp runtime reached
   ready state and produced a 29-token rewrite in 2.13 seconds in one local smoke test.

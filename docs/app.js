@@ -25,15 +25,27 @@ const PORT_BASE = 47615;
 const PORT_SPAN = 10;
 const PROBE_TIMEOUT_MS = 2500;
 
-function localURL(path) { return `http://127.0.0.1:${state.port}${path}`; }
+// The device can also serve this page to other computers on its network (app/internal/launcher/lan.go).
+// The page then talks to its own origin, which is that device, instead of 127.0.0.1.
+let onDevice = false;
+function localURL(path) { return onDevice ? path : `http://127.0.0.1:${state.port}${path}`; }
+// targetAddressSpace asks Chrome's local network permission for 127.0.0.1; same-origin calls need neither.
+function localFetch(path, options) {
+  return fetch(localURL(path), onDevice ? { cache: 'no-store', ...options } :
+    { mode: 'cors', cache: 'no-store', targetAddressSpace: 'loopback', ...options });
+}
+async function detectDevice() {
+  if (location.protocol !== 'http:') return false;
+  try { return (await (await fetch('/bridge/ping', { cache: 'no-store' })).json()).app === 'asenaizer'; }
+  catch { return false; }
+}
 function message(id, value, kind = '') {
   const el = $(id); el.textContent = value; el.className = id === 'model-message' ? `model-message ${kind}` : `message ${kind}`;
 }
 async function api(path, method = 'GET', body, signal) {
-  const options = { method, mode: 'cors', cache: 'no-store', targetAddressSpace: 'loopback', signal,
-    headers: { Authorization: `Bearer ${state.token}` } };
+  const options = { method, signal, headers: { Authorization: `Bearer ${state.token}` } };
   if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
-  const response = await fetch(localURL(path), options);
+  const response = await localFetch(path, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(data.error?.message || data.error || `HTTP ${response.status}`);
@@ -45,8 +57,8 @@ async function api(path, method = 'GET', body, signal) {
 }
 // Streams a llama.cpp /completion response and reports the text as it arrives.
 async function streamCompletion(body, signal, onText) {
-  const response = await fetch(localURL('/bridge/completion'), {
-    method: 'POST', mode: 'cors', cache: 'no-store', targetAddressSpace: 'loopback', signal,
+  const response = await localFetch('/bridge/completion', {
+    method: 'POST', signal,
     headers: { Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...body, stream: true })
   });
@@ -289,6 +301,7 @@ async function probe(port, signal) {
 }
 // Probes the whole range in parallel and resolves with the first port that answers.
 async function findDevice() {
+  if (onDevice) return Number(location.port) || 80;
   const ports = [...new Set([state.port, ...Array.from({ length: PORT_SPAN }, (_, i) => PORT_BASE + i)])];
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
@@ -318,8 +331,9 @@ $('pair-form').onsubmit = async (event) => {
   try {
     const port = await findDevice();
     if (!port) throw new Error('Could not find the Asenaizer app on this computer. Start it, then try again.');
-    const response = await fetch(`http://127.0.0.1:${port}/bridge/pair`, {
-      method: 'POST', mode: 'cors', cache: 'no-store', targetAddressSpace: 'loopback',
+    state.port = port;
+    const response = await localFetch('/bridge/pair', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, name: browserLabel() })
     });
     const data = await response.json().catch(() => ({}));
@@ -475,11 +489,20 @@ function prefillPairCode() {
   $('connect').focus();
   return true;
 }
-if (prefillPairCode()) {
-  // Waiting for the user to select Connect.
-} else if (state.token) {
-  message('connect-message', `Reconnecting to ${state.device || 'your device'}…`);
-  findDevice().then((port) => { if (port) state.port = port; refresh(); });
-}
+const prefilled = prefillPairCode();
+detectDevice().then((yes) => {
+  onDevice = yes;
+  if (onDevice) {
+    $('connect-lede').textContent = 'Pair this browser with the computer that serves this page. Your drafts are rewritten by the model on its GPU and travel over your local network.';
+    $('get-app').hidden = true;
+  }
+  if (prefilled) return; // waiting for the user to select Connect
+  if (state.token) {
+    message('connect-message', `Reconnecting to ${state.device || 'your device'}…`);
+    findDevice().then((port) => { if (port) state.port = port; refresh(); });
+  } else if (onDevice) {
+    message('connect-message', 'On that computer, open Asenaizer from the tray and select Connect a browser to see a code.');
+  }
+});
 setInterval(() => { if (state.token && !state.busy && !state.paused) refresh(); }, 3000);
 render();

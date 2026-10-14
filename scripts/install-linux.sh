@@ -19,6 +19,7 @@
 #   ASZ_NO_STARTUP=1  do not start at sign-in     ASZ_DESKTOP=1    add a desktop shortcut
 #   ASZ_NO_LAUNCH=1   do not open when done       ASZ_PLAIN=1      simple prompts instead of gum
 #   ASZ_SOURCE=<dir>  install an unpacked Linux package (Humanizer, asenaizer-tray, engine/, VERSION)
+#   ASZ_KEEP_CHOICES=1  keep the current sign-in start and desktop shortcut (the app updating itself)
 #   ASZ_PREVIEW=1     walk through everything, change nothing (=fail: a failed install, =warn: an optional part
 #                     that failed)
 # Arguments
@@ -701,6 +702,8 @@ use_package_dir() {
   [[ -d "$src" ]] || { FETCH_ERR="ASZ_SOURCE is not a folder: $src"; return 1; }
   status extract
   mkdir -p "$STAGE" && cp -a -- "$src"/. "$STAGE"/ || { FETCH_ERR="cannot copy $src"; return 1; }
+  # a release package carries this script for the app's own updates; it does not go into the install dir
+  rm -rf -- "$STAGE/installer"
   VERSION_STR="$(tr -d '[:space:]' <"$STAGE/VERSION" 2>/dev/null || true)"
   [[ -n "$VERSION_STR" ]] || VERSION_STR="?"
   return 0
@@ -743,6 +746,9 @@ build_from_source() {
   VERSION_STR="$(tr -d '[:space:]' <"$CHECKOUT/VERSION" 2>/dev/null || true)"
   [[ -n "$VERSION_STR" ]] || VERSION_STR="0.0.0"
   printf '%s\n' "$VERSION_STR" >"$STAGE/VERSION"
+  # the website, which the service serves to other computers on the network when asked to
+  mkdir -p "$STAGE/site" && cp -- "$CHECKOUT"/docs/{index.html,app.js,style.css,theme.js,favicon.svg,apple-touch-icon.png} "$STAGE/site/" \
+    || { FETCH_ERR="the website files are missing from the checkout"; return 1; }
   return 0
 }
 
@@ -1026,6 +1032,11 @@ main() {
   [[ "${ASZ_NO_STARTUP:-}" == 1 ]] && OPT_STARTUP=0
   [[ "${ASZ_DESKTOP:-}" == 1 ]] && OPT_DESKTOP=1
   [[ "${ASZ_NO_LAUNCH:-}" == 1 ]] && OPT_LAUNCH=0
+  if [[ "${ASZ_KEEP_CHOICES:-}" == 1 ]]; then
+    # the app updates itself: it starts at sign-in and has a desktop shortcut only if it does now
+    if [[ -f "$AUTOSTART_DIR/asenaizer.desktop" ]]; then OPT_STARTUP=1; else OPT_STARTUP=0; fi
+    if grep -qsF "$PREFIX/asenaizer-tray" "$(desktop_dir)/asenaizer.desktop"; then OPT_DESKTOP=1; else OPT_DESKTOP=0; fi
+  fi
   load_texts
   trap cleanup EXIT
   trap 'CANCEL=1' TERM

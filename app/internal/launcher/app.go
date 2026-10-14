@@ -98,6 +98,11 @@ type App struct {
 	updates   *updater     // 检查更新(update*.go)
 	inflight  atomic.Int32 // 正在进行的改写请求
 	afterExit func()       // 退出收尾后要做的事(App 更新:启动新版本并确认)
+
+	siteDir string     // the website's files, served to other computers (lan.go)
+	lanMu   sync.Mutex // guards lan and lanErr
+	lan     *lanServer // nil while other computers are not allowed
+	lanErr  string     // why the last start failed
 }
 
 func (a *App) logf(format string, args ...any) {
