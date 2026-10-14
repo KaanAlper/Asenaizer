@@ -3,7 +3,6 @@ package launcher
 import (
 	"context"
 	"net/http"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -98,13 +97,20 @@ func readGPUStats(ctx context.Context, enginePID int) gpuResp {
 	}
 	resp.GPUs = parseGPUQuery(string(out))
 	if enginePID > 0 && len(resp.GPUs) > 0 {
-		apps, err := runSMI(ctx, "--query-compute-apps=gpu_uuid,pid,used_memory")
-		if err == nil {
-			// llama.cpp splits layers across every visible card, so the share is counted per card.
-			perCard := parseEngineMem(string(apps), enginePID)
-			for i := range resp.GPUs {
-				resp.GPUs[i].EngineMemMB = perCard[resp.GPUs[i].UUID]
+		// llama.cpp splits layers across every visible card, so the share is counted per card.
+		perCard := map[string]int{}
+		if apps, err := runSMI(ctx, "--query-compute-apps=gpu_uuid,pid,used_memory"); err == nil {
+			perCard = parseEngineMem(string(apps), enginePID)
+		}
+		// On Windows (WDDM) nvidia-smi lists the engine with [N/A] memory; the system's GPU
+		// counters still know it. Without them the whole card shows as other programs.
+		if sumValues(perCard) == 0 {
+			if c, ok := readGPUCounters(enginePID); ok {
+				perCard = engineMemFromCounters(resp.GPUs, c)
 			}
+		}
+		for i := range resp.GPUs {
+			resp.GPUs[i].EngineMemMB = perCard[resp.GPUs[i].UUID]
 		}
 	}
 	return resp
@@ -151,18 +157,12 @@ func parseEngineMem(out string, pid int) map[string]int {
 	return perCard
 }
 
-// processRSSMB reads resident memory from /proc; it returns 0 where /proc does not exist.
-func processRSSMB(pid int) int {
-	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
-	if err != nil {
-		return 0
+func sumValues(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
 	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if f := strings.Fields(line); len(f) >= 2 && f[0] == "VmRSS:" {
-			return atoiOr0(f[1]) / 1024
-		}
-	}
-	return 0
+	return n
 }
 
 func atoiOr0(s string) int {
